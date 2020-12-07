@@ -30,3 +30,21 @@
 *.exe
 *.out
 *.app
+kff_example
+
+# CMake
+**/CMakeCache.txt
+**/CMakeFiles/
+**/Makefile
+**/*.cmake
+
+# aspell files
+**/*.bak
+
+# Doc files
+doc/
+Doxyfile
+
+# kff files
+kff_io.hpp
+**/*.kff
