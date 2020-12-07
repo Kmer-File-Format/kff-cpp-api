@@ -23,14 +23,14 @@ int main(int argc, char * argv[]) {
 	// --- global variable write ---
 
 	// Set global variables
-	Section_GV sgv = file->open_section_GV();
+	Section_GV sgv(file);
 	sgv.write_var("k", 10);
 	sgv.write_var("max", 240);
 	sgv.write_var("data_size", 1);
 	sgv.close();
 
 	// --- Write a raw sequence bloc ---
-	Section_Raw sr = file->open_section_raw();
+	Section_Raw sr(file);
 	// 2-bit sequence encoder
 	uint8_t encoded[1024];
 	uint8_t counts[255];
@@ -45,12 +45,12 @@ int main(int argc, char * argv[]) {
 	sr.write_compacted_sequence(encoded, 11, counts);
 	sr.close();
 
-	sgv = file->open_section_GV();
+	sgv = Section_GV(file);
 	sgv.write_var("m", 8);
 	sgv.close();
 
 	// --- write a minimizer sequence block ---
-	Section_Minimizer sm = file->open_section_minimizer();
+	Section_Minimizer sm(file);
 	encode_sequence("AAACTGAT", encoded);
 	sm.write_minimizer(encoded);
 
@@ -82,7 +82,7 @@ int main(int argc, char * argv[]) {
 
 	// --- Global variable read ---
 	char section_name = file->read_section_type();
-	sgv = file->open_section_GV();
+	sgv = Section_GV(file);
 
 	uint64_t k = file->global_vars["k"];
 	uint64_t max = file->global_vars["max"];
@@ -91,7 +91,7 @@ int main(int argc, char * argv[]) {
 	// --- Read Raw Block ---
 	section_name = file->read_section_type();
 	cout << "Read section " << section_name << endl;
-	sr = file->open_section_raw();
+	sr = Section_Raw(file);
 	cout << "nb blocks: " << sr.nb_blocks << endl;
 
 	uint8_t * seq = new uint8_t[(max + k) / 8 + 1];
@@ -110,12 +110,12 @@ int main(int argc, char * argv[]) {
 	// --- Read variables to load m ---
 	section_name = file->read_section_type();
 	cout << "Read section " << section_name << endl;
-	sgv = file->open_section_GV();
+	sgv = Section_GV(file);
 	uint64_t m = file->global_vars["m"];
 	cout << endl;
 
 	// --- Read Minimizer block ---
-	sm = file->open_section_minimizer();
+	sm = Section_Minimizer(file);
 	cout << "Minimizer: " << decode_sequence(sm.minimizer, m) << endl;
 
 	for (uint64_t i=0 ; i<sm.nb_blocks ; i++) {
@@ -131,6 +131,8 @@ int main(int argc, char * argv[]) {
 	}
 	cout << endl;
 
+	delete[] seq;
+	delete[] data;
 	file->close();
 	delete file;
 

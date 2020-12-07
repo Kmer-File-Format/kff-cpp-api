@@ -191,15 +191,6 @@ char Kff_file::read_section_type() {
 
 // ----- Global variables sections -----
 
-Section_GV Kff_file::open_section_GV() {
-	// Verify that header has been read.
-	if (not this->header_over) {
-		this->complete_header();
-	}
-
-	return Section_GV(this);
-}
-
 Section_GV::Section_GV(Kff_file * file) {
 	this->file = file;
 	this->begining = file->fs.tellp();
@@ -289,10 +280,6 @@ Block_section_reader * Block_section_reader::construct_section(Kff_file * file) 
 
 
 // ----- Raw sequence section -----
-
-Section_Raw Kff_file::open_section_raw() {
-	return Section_Raw(this);
-}
 
 Section_Raw::Section_Raw(Kff_file * file) {
 	assert(file->global_vars.find("k") != file->global_vars.end());
@@ -414,10 +401,6 @@ void Section_Raw::close() {
 
 // ----- Minimizer sequence section -----
 
-Section_Minimizer Kff_file::open_section_minimizer() {
-	return Section_Minimizer(this);
-}
-
 Section_Minimizer::Section_Minimizer(Kff_file * file) {
 	assert(file->global_vars.find("k") != file->global_vars.end());
 	assert(file->global_vars.find("m") != file->global_vars.end());
@@ -462,12 +445,28 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) {
 	}
 }
 
+Section_Minimizer::~Section_Minimizer() {
+	delete[] this->minimizer;
+}
+
+Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
+	file = sm.file;
+	sm.file = nullptr;
+	begining = sm.begining;
+	is_closed = sm.is_closed;
+	m = sm.m;
+	nb_bytes_mini = sm.nb_bytes_mini;
+	std::swap(minimizer, sm.minimizer);
+
+	return *this;
+}
+
 void Section_Minimizer::write_minimizer(uint8_t * minimizer) {
 	assert(!this->is_closed);
 	uint64_t pos = file->fs.tellp();
 	file->fs.seekp(this->begining+1);
 	file->fs.write((char *)minimizer, this->nb_bytes_mini);
-	this->minimizer = minimizer;
+	memcpy(this->minimizer, minimizer, this->nb_bytes_mini);
 	file->fs.seekp(pos);
 	
 }
@@ -714,7 +713,7 @@ Kff_reader::Kff_reader(std::string filename) {
 	this->current_shifts = new uint8_t*[4];
 	for (uint8_t i=0 ; i<4 ; i++) {
 		this->current_shifts[i] = new uint8_t[1];
-		this->current_shifts[0] = 0;
+		this->current_shifts[i][0] = 0;
 	}
 	this->current_sequence = this->current_shifts[0];
 	this->current_data = new uint8_t[1];
@@ -727,6 +726,13 @@ Kff_reader::Kff_reader(std::string filename) {
 }
 
 Kff_reader::~Kff_reader() {
+	delete[] this->current_kmer;
+	delete[] this->current_data;
+
+	for (uint i=0 ; i<4 ; i++)
+		delete[] this->current_shifts[i];
+	delete[] this->current_shifts;
+
 	delete this->file;
 }
 
@@ -740,7 +746,7 @@ void Kff_reader::read_until_first_section_block() {
 		// --- Update data structure sizes ---
 		if (section_type == 'v') {
 			// Read the global variable block
-			auto gvs = file->open_section_GV();
+			Section_GV gvs(file);
 			// Update sequence size if k or max change
 			if (gvs.vars.find("k") != gvs.vars.end()
 				or gvs.vars.find("max") != gvs.vars.end()) {
@@ -818,8 +824,10 @@ uint64_t Kff_reader::next_block(uint8_t ** sequence, uint8_t ** data) {
 	auto nb_kmers = remaining_kmers;
 	remaining_kmers = 0;
 	remaining_blocks -= 1;
-	if (remaining_blocks == 0)
+	if (remaining_blocks == 0) {
+		delete current_section;
 		current_section = NULL;
+	}
 
 	return nb_kmers;
 }
@@ -851,8 +859,10 @@ void Kff_reader::next_kmer(uint8_t ** kmer, uint8_t ** data) {
 	remaining_kmers -= 1;
 	if (remaining_kmers == 0) {
 		remaining_blocks -= 1;
-		if (remaining_blocks == 0)
+		if (remaining_blocks == 0) {
+			delete current_section;
 			current_section = NULL;
+		}
 	}
 }
 

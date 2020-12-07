@@ -145,27 +145,6 @@ public:
 	 */
 	char read_section_type();
 	/**
-	 * Create and return a Section_GV object.
-	 * This object is used to create/read the Global Variable sections.
-	 *
-	 * @retun An openend Section_GV object with the same io caracteristics than the file.
-	 */
-	Section_GV open_section_GV();
-	/**
-	 * Create and return a Section_Raw object.
-	 * This object is used to create/read the Raw kmer sections.
-	 *
-	 * @retun An openend Section_Raw object with the same io caracteristics than the file.
-	 */
-	Section_Raw open_section_raw();
-	/**
-	 * Create and return a Section_Minimizer object.
-	 * This object is used to create/read the Minimizer kmer sections.
-	 *
-	 * @retun An openend Section_Raw object with the same io caracteristics than the file.
-	 */
-	Section_Minimizer open_section_minimizer();
-	/**
 	 * Jump over the next section if it is section containing kmers.
 	 *
 	 * @return True if a section is skipped, false if the section can't be skipped, eof is reached or the file is not read ready.
@@ -185,13 +164,13 @@ private:
 	uint64_t nb_vars;
 	bool is_closed;
 
-	Section_GV(Kff_file * file);
 	void read_section();
 	void read_var();
 
 	friend class Kff_file;
 
 public:
+	Section_GV(Kff_file * file);
 	/**
 	 * A map containing all the declared variables for this section.
 	 * If the file is opened in r mode, all the variables of this section have been loaded during the object construction.
@@ -232,6 +211,8 @@ public:
 	uint32_t nb_blocks;
 	uint32_t remaining_blocks;
 
+	virtual ~Block_section_reader(){};
+
 	static Block_section_reader * construct_section(Kff_file * file);
 	/**
 	 * Read the next block of the section.
@@ -271,10 +252,11 @@ private:
 	friend class Kff_file;
 	friend class Block_section_reader;
 
-	Section_Raw(Kff_file * file);
 	uint32_t read_section_header();
 
 public:
+	Section_Raw(Kff_file * file);
+	~Section_Raw(){};
 
 	/**
 	 * Read the next block of the section.
@@ -316,6 +298,10 @@ public:
  */
 class Section_Minimizer: public Block_section_reader {
 private:
+	Section_Minimizer(Section_Minimizer & sm) = delete;
+	Section_Minimizer() = delete;
+
+	
 	Kff_file * file;
 	long begining;
 	bool is_closed;
@@ -327,10 +313,12 @@ private:
 	uint8_t nb_bytes_mini;
 	uint8_t mini_pos_bytes;
 
-	Section_Minimizer(Kff_file * file);
 	uint32_t read_section_header();
 
 public:
+	Section_Minimizer(Kff_file * file);
+	Section_Minimizer& operator= ( Section_Minimizer && sm);
+	~Section_Minimizer();
 	/**
 	 * Compacted minimizer
 	 */
