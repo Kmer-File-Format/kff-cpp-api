@@ -23,7 +23,10 @@ void read_value(T & val, fstream & fs) {
 }
 
 uint64_t bytes_from_bit_array(uint64_t bits_per_elem, uint64_t nb_elem) {
-	return ((bits_per_elem * nb_elem - 1) / 8) + 1;
+	if (bits_per_elem == 0 or nb_elem == 0)
+		return 0;
+	else
+		return ((bits_per_elem * nb_elem - 1) / 8) + 1;
 }
 
 
