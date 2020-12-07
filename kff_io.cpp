@@ -168,6 +168,7 @@ bool Kff_file::jump_next_section() {
 	if (section_type == 'r' or section_type == 'm') {
 		Block_section_reader * section = Block_section_reader::construct_section(this);
 		section->jump_section();
+		delete section;
 		return true;
 	}
 	return false;
