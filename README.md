@@ -101,7 +101,7 @@ It is accessible via the file property *encoding*.
 
 Finally the metadata size is automatically read but not the metadata content.
 The size is available via the the file property *metadata_size*.
-You can either read the metadata content as follow or let the file skip it when you read the first section.
+You can either read the metadata content as follow or let the first call to *read_section_type* skip it for you.
 
 ```C++
   // Get the metadate size
@@ -124,13 +124,13 @@ You can use *read_section_type* to get this char and then use the dedicated func
 
 ### Global variable section
 
-When 'v' char is detected, you can call the file to open a Section_GV.
+When 'v' char is detected, you can call the the opening of a Section_GV.
 The creation of the section on a file will automatically read the variables inside of the section.
 The variables are accessible as a std::map<string, uint64_t> with the public section property vars or inside the file property global_vars.
 
 ```C++
   // Open the section (automatically read the variables)
-  Section_GV sgv = infile.open_section_GV();
+  Section_GV sgv(&infile);
   // Read the variables from the section map
   for (auto it : sgv.vars)
     std::cout << it.first << ": " << it.second << std::endl;
@@ -141,7 +141,7 @@ The variables are accessible as a std::map<string, uint64_t> with the public sec
 
 ### Raw sequences section
 
-When 'r' char is detected, you can call the file to open a Section_Raw.
+When 'r' char is detected, you can call the opening of a Section_Raw.
 At the section creation, the number of blocks inside of it is automatically read and stored in the property *nb_blocks*.
 The number of remaining blocks in the section is also available in the property *remaining_blocks*.
 
@@ -152,7 +152,7 @@ The number of remaining blocks in the section is also available in the property 
   uint64_t ds = infile.global_vars["data_size"];
 
   // Open the raw section
-  Section_Raw sr = infile.open_section_raw();
+  Section_Raw sr(&infile);
   cout << sr.remaining_blocks << "/" << sr.nb_blocks << endl;
 
   // Prepare buffers for sequences and data
@@ -183,7 +183,7 @@ So, please don't rely on them after a direct file pointer usage or manually upda
 
 ### Minimizer sequences section
 
-When 'm' char is detected, you can call the file to open a Section_Minimizer.
+When 'm' char is detected, you can call the the opening of a Section_Minimizer.
 This section is very similar from the raw section.
 In fact, you can use the exact same code after the opening.
 But where raw blocks reading function uses direct file reading, the one here hide more computation.
@@ -197,7 +197,7 @@ The minimizer is accessible in the section attribute *minimizer*.
   uint64_t m = infile.global_vars["m"];
 
   // Open the minimizer section
-  Section_Minimizer sm = infile.open_section_minimizer();
+  Section_Minimizer sm(infile);
   uint8_t * mini = new uint8_t[m / 4 + 1];
   memcpy(mini, sm.minimizer, m%4==0 ? m/4 : m/4+1);
   // [...] Use the minimizer
@@ -228,7 +228,7 @@ These sections are created using a static function that returns a nullptr if the
 
 ```C++
   // Construct a block reader
-  Block_section_reader * br = Block_section_reader::construct_section(infile);
+  Block_section_reader * br = Block_section_reader::construct_section(&infile);
 
   if (br == nullptr) {
     std::cerr("Next section is not a sequence section");
@@ -244,7 +244,7 @@ For that, we create a dedicated function for each:
 
 ```C++
   // Construct a block reader
-  Block_section_reader * br = Block_section_reader::construct_section(infile);
+  Block_section_reader * br = Block_section_reader::construct_section(&infile);
   // Skip a block inside of a reader
   br.jump_sequence();
   br.close();
@@ -298,7 +298,7 @@ Initially this value is automatically set to 0 and updated when you call the clo
 
 ```C++
   // Open the section
-  Section_GV sgv = outfile.open_section_GV();
+  Section_GV sgv(outfile);
   
   // Write all the values needed
   sgv.write_var("k", 7);
@@ -328,7 +328,7 @@ Prior to raw section writings, do not forget to write the variables needed (cf k
 
 ```C++
   // Open the raw section
-  Section_Raw sr = outfile.open_section_raw();
+  Section_Raw sr(outfile);
 
   std::string sequence;
   uint8_t counts[8];
@@ -359,7 +359,7 @@ To write a block, you only need one more piece of information than for a row blo
 
 ```C++
   // Open the raw section
-  Section_Minimizer sm = outfile.open_section_minimizer();
+  Section_Minimizer sm(outfile);
 
   std::string sequence;
   uint8_t counts[8];
