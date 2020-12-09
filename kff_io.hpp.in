@@ -353,6 +353,15 @@ public:
 	 */
 	void write_compacted_sequence (uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array);
 	/**
+		* Add the minimizer of the block indide of a sequence.
+		*
+		* @param nb_kmer Number of kmers inside of the sequence
+		* @param seq Compacted sequence without minimizer. The space allocaded must be
+		* sufficient for the minimizer add.
+		* @param mini_pos the position of the minimizer inside of the sequence.
+	 	**/
+	void add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t mini_pos);
+	/**
 	 * Read the next block of the section.
 	 * The sequence of the block is pushed in the seq array and the data in the data array.
 	 * These arrays must be already allocated.

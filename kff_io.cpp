@@ -620,12 +620,8 @@ void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_siz
 	delete[] seq_copy;
 }
 
-uint64_t Section_Minimizer::read_compacted_sequence(uint8_t* seq, uint8_t* data) {
-	// Read the block
-	uint64_t mini_pos;
-	uint64_t nb_kmers_in_block = this->read_compacted_sequence_without_mini(seq, data, mini_pos);
-	
-	uint64_t seq_size = nb_kmers_in_block + k - 1;
+void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t mini_pos) {
+	uint64_t seq_size = nb_kmer + k - 1;
 	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
 	uint64_t size_no_mini = seq_size - m;
 	uint64_t bytes_no_mini = bytes_from_bit_array(2, size_no_mini);
@@ -681,6 +677,14 @@ uint64_t Section_Minimizer::read_compacted_sequence(uint8_t* seq, uint8_t* data)
 
 	delete[] suffix;
 	delete[] mini_shifted;
+}
+
+uint64_t Section_Minimizer::read_compacted_sequence(uint8_t* seq, uint8_t* data) {
+	// Read the block
+	uint64_t mini_pos;
+	uint64_t nb_kmers_in_block = this->read_compacted_sequence_without_mini(seq, data, mini_pos);
+	this->add_minimizer(nb_kmers_in_block, seq, mini_pos);
+	
 	return nb_kmers_in_block;
 }
 
