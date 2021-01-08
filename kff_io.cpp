@@ -44,7 +44,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		streammode |= fstream::out;
 	} else if (mode[0] == 'r') {
 		this->is_reader = true;
-		streammode |= fstream::in;
+		streammode |= fstream::in;		
 	} else {
 		cerr << "Unsupported mode " << mode << endl;
 		exit(0);
@@ -64,7 +64,8 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		this->fs >> this->major_version >> this->minor_version;
 
 		if (KFF_VERSION_MAJOR < this->major_version or (KFF_VERSION_MAJOR == this->major_version and KFF_VERSION_MINOR < this->minor_version)) {
-			cerr << "The software version " << KFF_VERSION_MAJOR << "." << KFF_VERSION_MINOR << " can't read files writen in version " << this->major_version << "." << this->minor_version << endl;
+			cerr << "The software version " << (uint)KFF_VERSION_MAJOR << "." << (uint)KFF_VERSION_MINOR << " can't read files writen in version " << (uint)this->major_version << "." << (uint)this->minor_version << endl;
+			throw "Unexpected version number";
 		}
 
 		this->read_encoding();
@@ -142,9 +143,9 @@ void Kff_file::read_encoding() {
 	this->encoding[3] = t = code & 0b11;
 
 	// Verification of the encoding
-	assert(a != c); assert(a != g); assert(a != t);
-	assert(c != g); assert(g != t);
-	assert(g != t);
+	if (a == c or a == g or a == t or c == g or c == t or g == t) {
+		throw "Wrong encoding. The 4 2-bits values must be different.";
+	}
 }
 
 void Kff_file::write_metadata(uint32_t size, const uint8_t * data) {
@@ -228,7 +229,8 @@ void Section_GV::write_var(const string & var_name, uint64_t value) {
 void Section_GV::read_section() {
 	char type;
 	file->fs >> type;
-	assert(type == 'v');
+	if (type != 'v')
+		throw "The section do not start with the 'v' char, you can't open a Global Variable section.";
 
 	read_value(this->nb_vars, file->fs);
 	for (uint64_t i=0 ; i<nb_vars ; i++) {
@@ -237,6 +239,9 @@ void Section_GV::read_section() {
 }
 
 void Section_GV::read_var() {
+	if (file->fs.eof())
+		throw "eof reached before the end of the variable section";
+
 	// Name reading
 	stringstream ss;
 	char c = 'o';
@@ -286,9 +291,12 @@ Block_section_reader * Block_section_reader::construct_section(Kff_file * file) 
 // ----- Raw sequence section -----
 
 Section_Raw::Section_Raw(Kff_file * file) {
-	assert(file->global_vars.find("k") != file->global_vars.end());
-	assert(file->global_vars.find("max") != file->global_vars.end());
-	assert(file->global_vars.find("data_size") != file->global_vars.end());
+	if (file->global_vars.find("k") == file->global_vars.end())
+		throw "Impossible to read the raw section due to missing k variable";
+	if(file->global_vars.find("max") == file->global_vars.end())
+		throw "Impossible to read the raw section due to missing max variable";
+	if(file->global_vars.find("data_size") == file->global_vars.end())
+		throw "Impossible to read the raw section due to missing data_size variable";
 	
 	uint64_t k = file->global_vars["k"];
 	uint64_t max = file->global_vars["max"];
@@ -324,7 +332,8 @@ uint32_t Section_Raw::read_section_header() {
 
 	char type;
 	fs >> type;
-	assert(type == 'r');
+	if (type != 'r')
+		throw "The section do not start with the 'r' char, you can't open a Raw sequence section.";
 
 	read_value(this->nb_blocks, fs);
 	this->remaining_blocks = this->nb_blocks;
@@ -406,10 +415,14 @@ void Section_Raw::close() {
 // ----- Minimizer sequence section -----
 
 Section_Minimizer::Section_Minimizer(Kff_file * file) {
-	assert(file->global_vars.find("k") != file->global_vars.end());
-	assert(file->global_vars.find("m") != file->global_vars.end());
-	assert(file->global_vars.find("max") != file->global_vars.end());
-	assert(file->global_vars.find("data_size") != file->global_vars.end());
+	if (file->global_vars.find("k") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing k variable";
+	if (file->global_vars.find("m") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing m variable";
+	if(file->global_vars.find("max") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing max variable";
+	if(file->global_vars.find("data_size") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing data_size variable";
 	
 	uint64_t k = file->global_vars["k"];
 	uint64_t m = file->global_vars["m"];
@@ -481,7 +494,8 @@ uint32_t Section_Minimizer::read_section_header() {
 	// Verify section type
 	char type;
 	fs >> type;
-	assert(type == 'm');
+	if (type != 'm')
+		throw "The section do not start with the 'm' char, you can't open a Minimizer sequence section.";
 
 	// Read the minimizer
 	file->fs.read((char *)this->minimizer, this->nb_bytes_mini);
