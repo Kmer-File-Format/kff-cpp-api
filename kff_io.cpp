@@ -639,55 +639,59 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
 	uint64_t size_no_mini = seq_size - m;
 	uint64_t bytes_no_mini = bytes_from_bit_array(2, size_no_mini);
-	leftshift8(seq, bytes_no_mini, (8 - size_no_mini * 2) % 8);
+	uint64_t left_offset = (4 - size_no_mini) % 4;
+	// Shift the whole sequence to the left to have np padding on byte 0.
+	leftshift8(seq, bytes_no_mini, left_offset*2);
 
 	// Compute usefull quantities
-	uint64_t bit_mini_start = 2 * mini_pos;
-	uint64_t byte_mini_start = bit_mini_start / 8;
-	uint8_t offset_mini_start = bit_mini_start % 8;
+	uint64_t nucl_mini_start = mini_pos;
+	uint64_t byte_mini_start = nucl_mini_start / 4;
+	uint8_t offset_mini_start = 2 * (nucl_mini_start % 4);
 
-	uint64_t bit_mini_stop = bit_mini_start + 2 * m;
-	uint64_t byte_mini_stop = bit_mini_stop / 8;
-	uint8_t offset_mini_stop = bit_mini_stop % 8;
+	uint64_t nucl_mini_stop = nucl_mini_start + m - 1;
+	uint8_t offset_mini_stop = 2 * (nucl_mini_stop % 4);
 
 	// Copy the suffix to shift it
 	uint64_t size_suffix = size_no_mini - mini_pos;
-	uint64_t suffix_bytes = bytes_from_bit_array(2, size_suffix+1);
+	uint64_t suffix_bytes = bytes_from_bit_array(2, size_suffix);
+	uint64_t suffix_start_byte = byte_mini_start;
+	uint64_t suffix_stop_nucl = nucl_mini_start + size_suffix - 1;
+	uint64_t suffix_stop_byte = suffix_stop_nucl / 4;
+
 	uint8_t * suffix = new uint8_t[suffix_bytes + 1];
 	memset(suffix, 0, suffix_bytes + 1);
+	memcpy(suffix, seq+suffix_start_byte, suffix_stop_byte - suffix_start_byte + 1);
+	leftshift8(suffix, suffix_stop_byte - suffix_start_byte + 1, offset_mini_start);
+	rightshift8(suffix, suffix_stop_byte - suffix_start_byte + 1, (offset_mini_stop+2)%8);
 
-	// Add the suffix
-	uint64_t nb_bytes_suffix_used = suffix_bytes + 1;
-	if (offset_mini_start < offset_mini_stop) {
-		memcpy(suffix, seq+byte_mini_start, suffix_bytes);
-		rightshift8(suffix, suffix_bytes+1, offset_mini_stop-offset_mini_start);
-	} else if (offset_mini_start > offset_mini_stop) {
-		memcpy(suffix+1, seq+byte_mini_start, suffix_bytes);
-		leftshift8(suffix, suffix_bytes+1, offset_mini_start-offset_mini_stop);
-	} else {
-		memcpy(suffix, seq+byte_mini_start, suffix_bytes+1);
-		nb_bytes_suffix_used -= 1;
-	}
-
-	seq[byte_mini_stop] = fusion8(seq[byte_mini_stop], suffix[0], offset_mini_stop);
-	for (uint64_t i=1 ; i<nb_bytes_suffix_used ; i++) {
-		seq[byte_mini_stop+i] = suffix[i];
+	// // Add the suffix
+	uint64_t suff_first_nucl_used = offset_mini_stop/2 + 1;
+	uint64_t suff_first_byte_used = suff_first_nucl_used / 4;
+	uint64_t suff_last_nucl_used = suff_first_nucl_used + size_suffix - 1;
+	uint64_t suff_last_byte_used = suff_last_nucl_used / 4;
+	uint64_t bytes_suff_used = suff_last_byte_used - suff_first_byte_used + 1;
+	
+	uint64_t fusion_byte = (nucl_mini_stop + 1) / 4;
+	seq[fusion_byte] = fusion8(seq[fusion_byte], suffix[0], 2 * (suff_first_nucl_used % 4));
+	for (uint64_t i=1 ; i<=bytes_suff_used ; i++) {
+		seq[fusion_byte+i] = suffix[i];
 	}
 
 	// Prepare the minimizer
 	uint8_t * mini_shifted = new uint8_t[this->nb_bytes_mini+1];
 	mini_shifted[this->nb_bytes_mini] = 0;
 	memcpy(mini_shifted, this->minimizer, this->nb_bytes_mini);
-	uint64_t mini_offset = (8 - ((2 * m) % 8)) % 8;
-	leftshift8(mini_shifted, this->nb_bytes_mini, mini_offset);
+	uint64_t mini_left_offset = (8 - ((2 * m) % 8)) % 8;
+
+	leftshift8(mini_shifted, this->nb_bytes_mini, mini_left_offset);
 	rightshift8(mini_shifted, this->nb_bytes_mini+1, offset_mini_start);
 	// Add the minimizer inside the sequence
 	seq[byte_mini_start] = fusion8(seq[byte_mini_start], mini_shifted[0], offset_mini_start);
-	for (uint64_t i=1 ; i<byte_mini_stop-byte_mini_start ; i++) {
+	for (uint64_t i=1 ; i<fusion_byte-byte_mini_start ; i++) {
 		seq[byte_mini_start+i] = mini_shifted[i];
 	}
 
-	seq[byte_mini_stop] = fusion8(mini_shifted[this->nb_bytes_mini], seq[byte_mini_stop], offset_mini_stop);
+	seq[fusion_byte] = fusion8(mini_shifted[fusion_byte-byte_mini_start], seq[fusion_byte], 2 * (suff_first_nucl_used % 4));
 
 	rightshift8(seq, seq_bytes, (8 - 2 * (seq_size % 4)) % 8);
 
@@ -869,15 +873,18 @@ void Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
 	}
 
 	uint64_t right_shift = (remaining_kmers - 1) % 4;
-	uint64_t end_byte = current_seq_bytes - (remaining_kmers / 4) - 1;
+	uint64_t prefix_offset = (4 - (current_seq_nucleotides % 4)) % 4;
+	uint64_t kmer_idx = current_seq_kmers - remaining_kmers;
 
-	uint64_t prefix_offset_idx = (4 - (current_seq_nucleotides % 4)) % 4;
-	uint64_t start_byte = (prefix_offset_idx + current_seq_kmers - remaining_kmers + right_shift) / 4;
+	uint64_t start_nucl = prefix_offset + right_shift + kmer_idx;
+	uint64_t start_byte = start_nucl / 4;
+	uint64_t end_nucl = start_nucl + file->global_vars["k"] - 1;
+	uint64_t end_byte = end_nucl / 4;
 
 	memcpy(current_kmer, current_shifts[right_shift]+start_byte, end_byte-start_byte+1);
 	kmer = current_kmer;
 	data = current_data + (current_seq_kmers - remaining_kmers) * this->file->global_vars["data_size"];
-
+	
 	// Read the next block if needed.
 	remaining_kmers -= 1;
 	if (remaining_kmers == 0) {
