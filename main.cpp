@@ -2,6 +2,7 @@
 #include <cassert>
 #include <sstream>
 #include <string>
+#include <cstring>
 
 #include "kff_io.hpp"
 
@@ -12,6 +13,7 @@ void encode_sequence(std::string sequence, uint8_t * encoded);
 string decode_sequence(uint8_t * encoded, size_t size);
 
 int main(int argc, char * argv[]) {
+
 	// --- header writing ---
 	Kff_file * file = new Kff_file("test.kff", "w");
 	// Set encoding   A  C  G  T
@@ -146,7 +148,7 @@ int main(int argc, char * argv[]) {
 		uint8_t * kmer;
 		uint8_t * data;
 		reader->next_kmer(&kmer, &data);
-		cout << (i++) << " " << decode_sequence(kmer, k) << " " << (uint)*data << endl;
+		cout << (i++) << " " << decode_sequence(kmer, reader->get_var("k")) << " " << (uint)*data << endl;
 	}
 
 	delete reader;

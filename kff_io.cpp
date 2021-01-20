@@ -458,6 +458,7 @@ Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 	sm.file = nullptr;
 	begining = sm.begining;
 	is_closed = sm.is_closed;
+	nb_blocks = sm.nb_blocks;
 	m = sm.m;
 	nb_bytes_mini = sm.nb_bytes_mini;
 	std::swap(minimizer, sm.minimizer);
@@ -585,37 +586,36 @@ void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_siz
 	assert(!this->is_closed);
 	// Compute all the bit and byte quantities needed.
 	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
+	uint left_offset_nucl = (4 - seq_size % 4) % 4;
 
-	uint64_t bit_mini_start = 2 * mini_pos;
-	uint64_t byte_mini_start = bit_mini_start / 8;
-	uint8_t offset_mini_start = bit_mini_start % 8;
-
-	uint64_t bit_mini_stop = bit_mini_start + 2 * m;
-	uint64_t byte_mini_stop = bit_mini_stop / 8;
-	uint8_t offset_mini_stop = bit_mini_stop % 8;
-
-	// Prepare space for sequence manipulation
-	size_t copy_size = seq_bytes - byte_mini_stop + 1;
-	uint8_t * seq_copy = new uint8_t[copy_size];
-	// Copy the suffix of the sequence and bitshift it to align with the prefix
-	if (offset_mini_start < offset_mini_stop) {
-		memcpy(seq_copy + 1, seq + byte_mini_stop, seq_bytes - byte_mini_stop);
-		leftshift8(seq_copy, copy_size, offset_mini_stop - offset_mini_start);
-	} else if (offset_mini_start > offset_mini_stop) {
-		memcpy(seq_copy, seq + byte_mini_stop, seq_bytes - byte_mini_stop);
-		rightshift8(seq_copy, copy_size, offset_mini_start - offset_mini_stop);
-	} else {
-		memcpy(seq_copy, seq + byte_mini_stop, seq_bytes - byte_mini_stop);
+	// 1 - Prepare space for sequence manipulation
+	uint8_t * seq_copy = new uint8_t[seq_bytes];
+	memcpy(seq_copy, seq, seq_bytes);
+	
+	// 2 - Move the suffix to the new bytes
+	uint mini_start_byte = (mini_pos + left_offset_nucl) / 4;
+	uint suff_start_byte = (mini_pos + m + left_offset_nucl) / 4;
+	for (uint i=0 ; i<seq_bytes-suff_start_byte ; i++) {
+		seq_copy[mini_start_byte + i] = seq_copy[suff_start_byte + i];
 	}
 
-	// Merge the shifted suffix with the prefix to compact the sequence
-	seq[byte_mini_start] = fusion8(seq[byte_mini_start], seq_copy[0],offset_mini_start);
-	for (uint64_t i=1 ; i<seq_bytes-byte_mini_stop ; i++) {
-		seq[byte_mini_start+i] = seq_copy[i];
-	}
+	// 3 - shift the suffix to the right bit
+	uint mini_offset = (mini_pos + left_offset_nucl) % 4;
+	uint suff_offset = (mini_pos + m + left_offset_nucl) % 4;
+	if (mini_offset < suff_offset)
+		leftshift8(seq_copy + mini_start_byte, seq_bytes - mini_start_byte, (suff_offset - mini_offset) * 2);
+	else
+		rightshift8(seq_copy + mini_start_byte, seq_bytes - mini_start_byte, (mini_offset - suff_offset) * 2);
+
+	// 4 - fusion the common byte
+	seq_copy[mini_start_byte] = fusion8(seq[mini_start_byte], seq_copy[mini_start_byte], mini_offset * 2);
+
+	// 5 - put all the offset bits on the left
+	leftshift8(seq_copy, seq_bytes, left_offset_nucl * 2);
+	rightshift8(seq_copy, seq_bytes, ((4 - ((seq_size - m) % 4)) % 4) * 2);
 
 	// Write the compacted sequence into file.
-	this->write_compacted_sequence_without_mini(seq, seq_size-m, mini_pos, data_array);
+	this->write_compacted_sequence_without_mini(seq_copy, seq_size-m, mini_pos, data_array);
 
 	delete[] seq_copy;
 }
@@ -694,7 +694,7 @@ void Section_Minimizer::close() {
 		fstream &	fs = this->file->fs;
 		long position = fs.tellp();
 		// Go write the number of variables in the correct place
-		fs.seekp(this->begining + 1 + this->nb_bytes_mini);
+		fs.seekp(this->begining + 1l + (long)this->nb_bytes_mini);
 		write_value(nb_blocks, fs);
 		fs.seekp(position);
 		this->is_closed = true;
@@ -725,6 +725,7 @@ Kff_reader::Kff_reader(std::string filename) {
 	}
 	this->current_sequence = this->current_shifts[0];
 	this->current_data = new uint8_t[1];
+	this->current_data[0] = 0;
 
 	this->current_section = NULL;
 	this->current_kmer = new uint8_t[1];
@@ -766,11 +767,13 @@ void Kff_reader::read_until_first_section_block() {
 				for (uint8_t i=0 ; i<4 ; i++) {
 					delete[] this->current_shifts[i];
 					this->current_shifts[i] = new uint8_t[max_size];
+					memset(current_shifts[i], 0, max_size);
 				}
 				this->current_sequence = this->current_shifts[0];
 
 				delete[] this->current_kmer;
 				this->current_kmer = new uint8_t[k/4 + 1];
+				memset(current_kmer, 0, k/4 + 1);
 			}
 
 			// Update the data array size
@@ -782,6 +785,7 @@ void Kff_reader::read_until_first_section_block() {
 				uint64_t max_size = data_size * max;
 				delete[] this->current_data;
 				this->current_data = new uint8_t[max_size];
+				memset(current_data, 0, max_size);
 			}
 		}
 		// Mount data from the files to the datastructures.
