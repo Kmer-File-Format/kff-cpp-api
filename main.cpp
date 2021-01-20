@@ -147,8 +147,8 @@ int main(int argc, char * argv[]) {
 	while (reader->has_next()) {
 		uint8_t * kmer;
 		uint8_t * data;
-		reader->next_kmer(&kmer, &data);
-		cout << (i++) << " " << decode_sequence(kmer, reader->get_var("k")) << " " << (uint)*data << endl;
+		reader->next_kmer(kmer, data);
+		cout << (i++) << " " << decode_sequence(kmer, k) << " " << (uint)*data << endl;
 	}
 
 	delete reader;

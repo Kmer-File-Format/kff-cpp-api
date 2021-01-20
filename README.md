@@ -32,7 +32,7 @@ NB: the kmer and data pointer are valid until you use again one of the two funct
   uint8_t * data;
 
   while (reader.has_next()) {
-    reader.next_kmer(&kmer, &data);
+    reader.next_kmer(kmer, data);
     //[...] use the kmer and its data
   }
 ```
@@ -48,7 +48,7 @@ If you prefer to enumerate kmers by block instead of one by one, you can use the
   uint8_t * data;
 
   while (reader.has_next()) {
-    uint64_t nb_kmers = reader.next_block(&kmers, &data);
+    uint64_t nb_kmers = reader.next_block(kmers, data);
     //[...] use the kmers and their associated data
   }
 ```

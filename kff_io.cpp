@@ -44,7 +44,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		streammode |= fstream::out;
 	} else if (mode[0] == 'r') {
 		this->is_reader = true;
-		streammode |= fstream::in;
+		streammode |= fstream::in;		
 	} else {
 		cerr << "Unsupported mode " << mode << endl;
 		exit(0);
@@ -64,7 +64,8 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		this->fs >> this->major_version >> this->minor_version;
 
 		if (KFF_VERSION_MAJOR < this->major_version or (KFF_VERSION_MAJOR == this->major_version and KFF_VERSION_MINOR < this->minor_version)) {
-			cerr << "The software version " << KFF_VERSION_MAJOR << "." << KFF_VERSION_MINOR << " can't read files writen in version " << this->major_version << "." << this->minor_version << endl;
+			cerr << "The software version " << (uint)KFF_VERSION_MAJOR << "." << (uint)KFF_VERSION_MINOR << " can't read files writen in version " << (uint)this->major_version << "." << (uint)this->minor_version << endl;
+			throw "Unexpected version number";
 		}
 
 		this->read_encoding();
@@ -142,9 +143,9 @@ void Kff_file::read_encoding() {
 	this->encoding[3] = t = code & 0b11;
 
 	// Verification of the encoding
-	assert(a != c); assert(a != g); assert(a != t);
-	assert(c != g); assert(g != t);
-	assert(g != t);
+	if (a == c or a == g or a == t or c == g or c == t or g == t) {
+		throw "Wrong encoding. The 4 2-bits values must be different.";
+	}
 }
 
 void Kff_file::write_metadata(uint32_t size, const uint8_t * data) {
@@ -228,7 +229,8 @@ void Section_GV::write_var(const string & var_name, uint64_t value) {
 void Section_GV::read_section() {
 	char type;
 	file->fs >> type;
-	assert(type == 'v');
+	if (type != 'v')
+		throw "The section do not start with the 'v' char, you can't open a Global Variable section.";
 
 	read_value(this->nb_vars, file->fs);
 	for (uint64_t i=0 ; i<nb_vars ; i++) {
@@ -237,6 +239,9 @@ void Section_GV::read_section() {
 }
 
 void Section_GV::read_var() {
+	if (file->fs.eof())
+		throw "eof reached before the end of the variable section";
+
 	// Name reading
 	stringstream ss;
 	char c = 'o';
@@ -286,9 +291,12 @@ Block_section_reader * Block_section_reader::construct_section(Kff_file * file) 
 // ----- Raw sequence section -----
 
 Section_Raw::Section_Raw(Kff_file * file) {
-	assert(file->global_vars.find("k") != file->global_vars.end());
-	assert(file->global_vars.find("max") != file->global_vars.end());
-	assert(file->global_vars.find("data_size") != file->global_vars.end());
+	if (file->global_vars.find("k") == file->global_vars.end())
+		throw "Impossible to read the raw section due to missing k variable";
+	if(file->global_vars.find("max") == file->global_vars.end())
+		throw "Impossible to read the raw section due to missing max variable";
+	if(file->global_vars.find("data_size") == file->global_vars.end())
+		throw "Impossible to read the raw section due to missing data_size variable";
 	
 	uint64_t k = file->global_vars["k"];
 	uint64_t max = file->global_vars["max"];
@@ -324,7 +332,8 @@ uint32_t Section_Raw::read_section_header() {
 
 	char type;
 	fs >> type;
-	assert(type == 'r');
+	if (type != 'r')
+		throw "The section do not start with the 'r' char, you can't open a Raw sequence section.";
 
 	read_value(this->nb_blocks, fs);
 	this->remaining_blocks = this->nb_blocks;
@@ -406,10 +415,14 @@ void Section_Raw::close() {
 // ----- Minimizer sequence section -----
 
 Section_Minimizer::Section_Minimizer(Kff_file * file) {
-	assert(file->global_vars.find("k") != file->global_vars.end());
-	assert(file->global_vars.find("m") != file->global_vars.end());
-	assert(file->global_vars.find("max") != file->global_vars.end());
-	assert(file->global_vars.find("data_size") != file->global_vars.end());
+	if (file->global_vars.find("k") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing k variable";
+	if (file->global_vars.find("m") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing m variable";
+	if(file->global_vars.find("max") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing max variable";
+	if(file->global_vars.find("data_size") == file->global_vars.end())
+		throw "Impossible to read the minimizer section due to missing data_size variable";
 	
 	uint64_t k = file->global_vars["k"];
 	uint64_t m = file->global_vars["m"];
@@ -482,7 +495,8 @@ uint32_t Section_Minimizer::read_section_header() {
 	// Verify section type
 	char type;
 	fs >> type;
-	assert(type == 'm');
+	if (type != 'm')
+		throw "The section do not start with the 'm' char, you can't open a Minimizer sequence section.";
 
 	// Read the minimizer
 	file->fs.read((char *)this->minimizer, this->nb_bytes_mini);
@@ -625,53 +639,59 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
 	uint64_t size_no_mini = seq_size - m;
 	uint64_t bytes_no_mini = bytes_from_bit_array(2, size_no_mini);
-	leftshift8(seq, bytes_no_mini, (8 - size_no_mini * 2) % 8);
+	uint64_t left_offset = (4 - size_no_mini) % 4;
+	// Shift the whole sequence to the left to have np padding on byte 0.
+	leftshift8(seq, bytes_no_mini, left_offset*2);
 
 	// Compute usefull quantities
-	uint64_t bit_mini_start = 2 * mini_pos;
-	uint64_t byte_mini_start = bit_mini_start / 8;
-	uint8_t offset_mini_start = bit_mini_start % 8;
+	uint64_t nucl_mini_start = mini_pos;
+	uint64_t byte_mini_start = nucl_mini_start / 4;
+	uint8_t offset_mini_start = 2 * (nucl_mini_start % 4);
 
-	uint64_t bit_mini_stop = bit_mini_start + 2 * m;
-	uint64_t byte_mini_stop = bit_mini_stop / 8;
-	uint8_t offset_mini_stop = bit_mini_stop % 8;
+	uint64_t nucl_mini_stop = nucl_mini_start + m - 1;
+	uint8_t offset_mini_stop = 2 * (nucl_mini_stop % 4);
 
 	// Copy the suffix to shift it
 	uint64_t size_suffix = size_no_mini - mini_pos;
-	uint64_t suffix_bytes = bytes_from_bit_array(2, size_suffix+1);
+	uint64_t suffix_bytes = bytes_from_bit_array(2, size_suffix);
+	uint64_t suffix_start_byte = byte_mini_start;
+	uint64_t suffix_stop_nucl = nucl_mini_start + size_suffix - 1;
+	uint64_t suffix_stop_byte = suffix_stop_nucl / 4;
+
 	uint8_t * suffix = new uint8_t[suffix_bytes + 1];
+	memset(suffix, 0, suffix_bytes + 1);
+	memcpy(suffix, seq+suffix_start_byte, suffix_stop_byte - suffix_start_byte + 1);
+	leftshift8(suffix, suffix_stop_byte - suffix_start_byte + 1, offset_mini_start);
+	rightshift8(suffix, suffix_stop_byte - suffix_start_byte + 1, (offset_mini_stop+2)%8);
 
-	// Add the suffix
-	uint64_t nb_bytes_suffix_used = suffix_bytes + 1;
-	if (offset_mini_start < offset_mini_stop) {
-		memcpy(suffix, seq+byte_mini_start, suffix_bytes);
-		rightshift8(suffix, suffix_bytes+1, offset_mini_stop-offset_mini_start);
-	} else if (offset_mini_start > offset_mini_stop) {
-		memcpy(suffix+1, seq+byte_mini_start, suffix_bytes);
-		leftshift8(suffix, suffix_bytes+1, offset_mini_start-offset_mini_stop);
-	} else {
-		memcpy(suffix, seq+byte_mini_start, suffix_bytes+1);
-		nb_bytes_suffix_used -= 1;
-	}
-
-	seq[byte_mini_stop] = fusion8(seq[byte_mini_stop], suffix[0], offset_mini_stop);
-	for (uint64_t i=1 ; i<nb_bytes_suffix_used ; i++) {
-		seq[byte_mini_stop+i] = suffix[i];
+	// // Add the suffix
+	uint64_t suff_first_nucl_used = offset_mini_stop/2 + 1;
+	uint64_t suff_first_byte_used = suff_first_nucl_used / 4;
+	uint64_t suff_last_nucl_used = suff_first_nucl_used + size_suffix - 1;
+	uint64_t suff_last_byte_used = suff_last_nucl_used / 4;
+	uint64_t bytes_suff_used = suff_last_byte_used - suff_first_byte_used + 1;
+	
+	uint64_t fusion_byte = (nucl_mini_stop + 1) / 4;
+	seq[fusion_byte] = fusion8(seq[fusion_byte], suffix[0], 2 * (suff_first_nucl_used % 4));
+	for (uint64_t i=1 ; i<=bytes_suff_used ; i++) {
+		seq[fusion_byte+i] = suffix[i];
 	}
 
 	// Prepare the minimizer
 	uint8_t * mini_shifted = new uint8_t[this->nb_bytes_mini+1];
+	mini_shifted[this->nb_bytes_mini] = 0;
 	memcpy(mini_shifted, this->minimizer, this->nb_bytes_mini);
-	uint64_t mini_offset = (8 - ((2 * m) % 8)) % 8;
-	leftshift8(mini_shifted, this->nb_bytes_mini, mini_offset);
+	uint64_t mini_left_offset = (8 - ((2 * m) % 8)) % 8;
+
+	leftshift8(mini_shifted, this->nb_bytes_mini, mini_left_offset);
 	rightshift8(mini_shifted, this->nb_bytes_mini+1, offset_mini_start);
 	// Add the minimizer inside the sequence
 	seq[byte_mini_start] = fusion8(seq[byte_mini_start], mini_shifted[0], offset_mini_start);
-	for (uint64_t i=1 ; i<byte_mini_stop-byte_mini_start ; i++) {
+	for (uint64_t i=1 ; i<fusion_byte-byte_mini_start ; i++) {
 		seq[byte_mini_start+i] = mini_shifted[i];
 	}
 
-	seq[byte_mini_stop] = fusion8(mini_shifted[this->nb_bytes_mini], seq[byte_mini_stop], offset_mini_stop);
+	seq[fusion_byte] = fusion8(mini_shifted[fusion_byte-byte_mini_start], seq[fusion_byte], 2 * (suff_first_nucl_used % 4));
 
 	rightshift8(seq, seq_bytes, (8 - 2 * (seq_size % 4)) % 8);
 
@@ -767,13 +787,12 @@ void Kff_reader::read_until_first_section_block() {
 				for (uint8_t i=0 ; i<4 ; i++) {
 					delete[] this->current_shifts[i];
 					this->current_shifts[i] = new uint8_t[max_size];
-					memset(current_shifts[i], 0, max_size);
+					memset(this->current_shifts[i], 0, max_size);
 				}
 				this->current_sequence = this->current_shifts[0];
-
 				delete[] this->current_kmer;
 				this->current_kmer = new uint8_t[k/4 + 1];
-				memset(current_kmer, 0, k/4 + 1);
+				memset(this->current_kmer, 0, (k/4+1));
 			}
 
 			// Update the data array size
@@ -785,7 +804,7 @@ void Kff_reader::read_until_first_section_block() {
 				uint64_t max_size = data_size * max;
 				delete[] this->current_data;
 				this->current_data = new uint8_t[max_size];
-				memset(current_data, 0, max_size);
+				memset(this->current_data, 0, max_size);
 			}
 		}
 		// Mount data from the files to the datastructures.
@@ -808,10 +827,7 @@ void Kff_reader::read_next_block() {
 		memcpy(current_shifts[i], current_sequence, current_seq_bytes);
 		// Shift
 		rightshift8(current_shifts[i], current_seq_bytes, 2 * i);
-		// cout << (uint64_t)current_shifts[i] << endl;
 	}
-
-	// cout << "/shift" << endl << endl;
 }
 
 bool Kff_reader::has_next() {
@@ -820,7 +836,7 @@ bool Kff_reader::has_next() {
 	return !file->fs.eof();
 }
 
-uint64_t Kff_reader::next_block(uint8_t ** sequence, uint8_t ** data) {
+uint64_t Kff_reader::next_block(uint8_t* & sequence, uint8_t* & data) {
 	// Verify the abylity to find another kmer in the file.
 	if (!this->has_next()){
 		sequence = NULL;
@@ -830,8 +846,8 @@ uint64_t Kff_reader::next_block(uint8_t ** sequence, uint8_t ** data) {
 
 	read_next_block();
 	
-	*sequence = current_sequence;
-	*data = current_data;
+	sequence = current_sequence;
+	data = current_data;
 
 	auto nb_kmers = remaining_kmers;
 	remaining_kmers = 0;
@@ -844,7 +860,7 @@ uint64_t Kff_reader::next_block(uint8_t ** sequence, uint8_t ** data) {
 	return nb_kmers;
 }
 
-void Kff_reader::next_kmer(uint8_t ** kmer, uint8_t ** data) {
+void Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
 	// Verify the abylity to find another kmer in the file.
 	if (!this->has_next()){
 		kmer = NULL;
@@ -858,15 +874,18 @@ void Kff_reader::next_kmer(uint8_t ** kmer, uint8_t ** data) {
 	}
 
 	uint64_t right_shift = (remaining_kmers - 1) % 4;
-	uint64_t end_byte = current_seq_bytes - (remaining_kmers / 4) - 1;
+	uint64_t prefix_offset = (4 - (current_seq_nucleotides % 4)) % 4;
+	uint64_t kmer_idx = current_seq_kmers - remaining_kmers;
 
-	uint64_t prefix_offset_idx = (4 - (current_seq_nucleotides % 4)) % 4;
-	uint64_t start_byte = (prefix_offset_idx + current_seq_kmers - remaining_kmers + right_shift) / 4;
+	uint64_t start_nucl = prefix_offset + right_shift + kmer_idx;
+	uint64_t start_byte = start_nucl / 4;
+	uint64_t end_nucl = start_nucl + file->global_vars["k"] - 1;
+	uint64_t end_byte = end_nucl / 4;
 
 	memcpy(current_kmer, current_shifts[right_shift]+start_byte, end_byte-start_byte+1);
-	*kmer = current_kmer;
-	*data = current_data + (current_seq_kmers - remaining_kmers) * this->file->global_vars["data_size"];
-
+	kmer = current_kmer;
+	data = current_data + (current_seq_kmers - remaining_kmers) * this->file->global_vars["data_size"];
+	
 	// Read the next block if needed.
 	remaining_kmers -= 1;
 	if (remaining_kmers == 0) {

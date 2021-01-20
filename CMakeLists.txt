@@ -20,6 +20,8 @@ set(HEADERS
   kff_io.hpp
   )
 
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
 # add the executable
 add_executable(kff_example main.cpp ${SRCS} ${HEADERS})
 
