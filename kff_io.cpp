@@ -51,7 +51,9 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	}
 
 	// Open the file
+	this->filename = filename;
 	this->fs.open(filename, streammode);
+	this->tmp_closed = false;
 	this->header_over = false;
 
 	// Write the version at the beginning of the file
@@ -94,6 +96,26 @@ void Kff_file::complete_header() {
 	}
 
 	this->header_over = true;
+}
+
+
+void Kff_file::tmp_close() {
+	if (this->is_writer and this->fs.is_open()) {
+		this->fs.close();
+		this->fs.clear();
+		this->tmp_closed = true;
+	}
+}
+
+
+void Kff_file::reopen() {
+	if (this->tmp_closed) {
+		auto streammode = fstream::binary | fstream::out | fstream::in | fstream::ate;
+
+		// Open the file
+		this->fs.open(this->filename, streammode);
+		this->tmp_closed = false;
+	}
 }
 
 
@@ -197,6 +219,9 @@ char Kff_file::read_section_type() {
 // ----- Global variables sections -----
 
 Section_GV::Section_GV(Kff_file * file) {
+	if (file->tmp_closed) {
+		file->reopen();
+	}
 	this->file = file;
 	this->begining = file->fs.tellp();
 	this->nb_vars = 0;
@@ -216,6 +241,10 @@ Section_GV::Section_GV(Kff_file * file) {
 
 void Section_GV::write_var(const string & var_name, uint64_t value) {
 	assert(!this->is_closed);
+
+	if (file->tmp_closed) {
+		file->reopen();
+	}
 
 	auto & fs = this->file->fs;
 	fs << var_name << '\0';
@@ -263,12 +292,15 @@ void Section_GV::read_var() {
 
 void Section_GV::close() {
 	if (file->is_writer) {
+		if (file->tmp_closed)
+			file->reopen();
 		// Save current position
 		fstream &	 fs = this->file->fs;
 		long position = fs.tellp();
 		// Go write the number of variables in the correct place
 		fs.seekp(this->begining + 1);
 		write_value(nb_vars, fs);
+
 		fs.seekp(position);
 		this->is_closed = true;
 	}
@@ -301,6 +333,10 @@ Section_Raw::Section_Raw(Kff_file * file) {
 	uint64_t k = file->global_vars["k"];
 	uint64_t max = file->global_vars["max"];
 	uint64_t data_size = file->global_vars["data_size"];
+
+	if (file->tmp_closed) {
+		file->reopen();
+	}
 
 	this->file = file;
 	this->begining = file->fs.tellp();
@@ -343,6 +379,9 @@ uint32_t Section_Raw::read_section_header() {
 
 void Section_Raw::write_compacted_sequence(uint8_t* seq, uint64_t seq_size, uint8_t * data_array) {
 	assert(!this->is_closed);
+	if (file->tmp_closed) {
+		file->reopen();
+	}
 	// 1 - Write nb kmers
 	uint64_t nb_kmers = seq_size - k + 1;
 	file->fs.write((char*)&nb_kmers, this->nb_kmers_bytes);
@@ -393,6 +432,9 @@ void Section_Raw::jump_sequence() {
 
 void Section_Raw::close() {
 	if (file->is_writer) {
+		if (file->tmp_closed) {
+			file->reopen();
+		}
 		// Save current position
 		fstream &	 fs = this->file->fs;
 		long position = fs.tellp();
@@ -428,6 +470,10 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) {
 	uint64_t m = file->global_vars["m"];
 	uint64_t max = file->global_vars["max"];
 	uint64_t data_size = file->global_vars["data_size"];
+
+	if (file->tmp_closed) {
+		file->reopen();
+	}
 
 	this->file = file;
 	this->begining = file->fs.tellp();
@@ -481,6 +527,10 @@ Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 
 void Section_Minimizer::write_minimizer(uint8_t * minimizer) {
 	assert(!this->is_closed);
+	if (file->tmp_closed) {
+		file->reopen();
+	}
+
 	uint64_t pos = file->fs.tellp();
 	file->fs.seekp(this->begining+1);
 	file->fs.write((char *)minimizer, this->nb_bytes_mini);
@@ -509,6 +559,9 @@ uint32_t Section_Minimizer::read_section_header() {
 
 void Section_Minimizer::write_compacted_sequence_without_mini(uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
 	assert(!this->is_closed);
+	if (file->tmp_closed) {
+		file->reopen();
+	}
 	// 1 - Write nb kmers
 	uint64_t nb_kmers = seq_size + m - k + 1;
 	file->fs.write((char*)&nb_kmers, this->nb_kmers_bytes);
@@ -598,6 +651,9 @@ inline uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index
 
 void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
 	assert(!this->is_closed);
+	if (file->tmp_closed) {
+		file->reopen();
+	}
 	// Compute all the bit and byte quantities needed.
 	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
 	uint left_offset_nucl = (4 - seq_size % 4) % 4;
@@ -710,6 +766,9 @@ uint64_t Section_Minimizer::read_compacted_sequence(uint8_t* seq, uint8_t* data)
 
 void Section_Minimizer::close() {
 	if (file->is_writer) {
+		if (file->tmp_closed) {
+			file->reopen();
+		}
 		// Save current position
 		fstream &	fs = this->file->fs;
 		long position = fs.tellp();

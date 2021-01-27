@@ -37,6 +37,8 @@ class Kff_file {
 private:
 	bool is_writer;
 	bool is_reader;
+	bool tmp_closed;
+	std::string filename;
 
 	// True when the header have been read/write and the fs pointer is after.
 	bool header_over;
@@ -84,6 +86,17 @@ public:
 	 * Destroy properly a Kff object, closing the file behind it.
 	 */
 	~Kff_file();
+	/**
+	 * Release the file pointer by temporarily close the file stream.
+	 * The usage of this function increase the execution time.
+	 * It should be use only when the user need a large amount of simulataneous kff files.
+	 */
+	void tmp_close();
+	/**
+	 * Reopen the file and point to the end of it.
+	 * This function is automatically called on write events if the file has been temporarily closed.
+	 */
+	void reopen();
 	/** 
 	 * Close the file
 	 *
