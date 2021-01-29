@@ -222,6 +222,11 @@ Section_GV::Section_GV(Kff_file * file) {
 	if (file->tmp_closed) {
 		file->reopen();
 	}
+
+	if (not file->header_over) {
+		file->complete_header();
+	}
+
 	this->file = file;
 	this->begining = file->fs.tellp();
 	this->nb_vars = 0;
@@ -336,6 +341,10 @@ Section_Raw::Section_Raw(Kff_file * file) {
 
 	if (file->tmp_closed) {
 		file->reopen();
+	}
+
+	if (not file->header_over) {
+		file->complete_header();
 	}
 
 	this->file = file;
@@ -473,6 +482,10 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) {
 
 	if (file->tmp_closed) {
 		file->reopen();
+	}
+
+	if (not file->header_over) {
+		file->complete_header();
 	}
 
 	this->file = file;
