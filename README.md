@@ -144,7 +144,7 @@ The variables are accessible as a std::map<string, uint64_t> with the public sec
 When 'r' char is detected, you can call the opening of a Section_Raw.
 At the section creation, the number of blocks inside of it is automatically read and stored in the property *nb_blocks*.
 The number of remaining blocks in the section is also available in the property *remaining_blocks*.
-The variable 'max' and 'data_size' as set as per: https://github.com/Kmer-File-Format/kff-reference#section-raw-sequences
+The variables 'max' and 'data_size' are to be set as per: https://github.com/Kmer-File-Format/kff-reference#section-raw-sequences
 
 ```C++
   // Get the global variables needed
