@@ -29,6 +29,10 @@ uint64_t bytes_from_bit_array(uint64_t bits_per_elem, uint64_t nb_elem) {
 		return ((bits_per_elem * nb_elem - 1) / 8) + 1;
 }
 
+static void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift);
+static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift);
+static uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index);
+
 
 // ----- Open / Close functions -----
 
@@ -636,7 +640,7 @@ void Section_Minimizer::jump_sequence() {
 /* Bitshift to the left all the bits in the array with a maximum of 7 bits.
  * Overflow on the left will be set into the previous cell.
  */
-void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
+static void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 	assert(bitshift < 8);
 
 	for (uint64_t i=0 ; i<length-1 ; i++) {
@@ -646,7 +650,7 @@ void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 }
 
 /* Similar to the previous function but on the right */
-void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
+static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 	assert(bitshift < 8);
 
 	for (uint64_t i=length-1 ; i>0 ; i--) {
@@ -658,7 +662,7 @@ void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 /* Fusion to bytes into one.
  * The merge_index higher bits are from left_bits the others from right_bits
  */
-inline uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
+static uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
 	uint8_t mask = 0xFF << (8-merge_index);
 	return (left_bits & mask) | (right_bits & ~mask);
 }
