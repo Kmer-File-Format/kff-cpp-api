@@ -643,20 +643,24 @@ void Section_Minimizer::jump_sequence() {
 static void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 	assert(bitshift < 8);
 
-	for (uint64_t i=0 ; i<length-1 ; i++) {
-		bitarray[i] = (bitarray[i] << bitshift) | (bitarray[i+1] >> (8-bitshift));
+	if (length > 0) {
+		for (uint64_t i=0 ; i<length-1 ; i++) {
+			bitarray[i] = (bitarray[i] << bitshift) | (bitarray[i+1] >> (8-bitshift));
+		}
+		bitarray[length-1] <<= bitshift;
 	}
-	bitarray[length-1] <<= bitshift;
 }
 
 /* Similar to the previous function but on the right */
 static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 	assert(bitshift < 8);
 
-	for (uint64_t i=length-1 ; i>0 ; i--) {
-		bitarray[i] = (bitarray[i-1] << (8-bitshift)) | (bitarray[i] >> bitshift);
+	if (length > 0) {
+		for (uint64_t i=length-1 ; i>0 ; i--) {
+			bitarray[i] = (bitarray[i-1] << (8-bitshift)) | (bitarray[i] >> bitshift);
+		}
+		bitarray[0] >>= bitshift;
 	}
-	bitarray[0] >>= bitshift;
 }
 
 /* Fusion to bytes into one.
@@ -709,79 +713,9 @@ void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_siz
 	delete[] seq_copy;
 }
 
-// void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t mini_pos) {
-// 	uint64_t seq_size = nb_kmer + k - 1;
-// 	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
-// 	uint64_t size_no_mini = seq_size - m;
-// 	uint64_t bytes_no_mini = bytes_from_bit_array(2, size_no_mini);
-// 	uint64_t left_offset = (4 - size_no_mini) % 4;
-// 	// Shift the whole sequence to the left to have np padding on byte 0.
-// 	leftshift8(seq, bytes_no_mini, left_offset*2);
-
-// 	// Compute usefull quantities
-// 	uint64_t nucl_mini_start = mini_pos;
-// 	uint64_t byte_mini_start = nucl_mini_start / 4;
-// 	uint8_t offset_mini_start = 2 * (nucl_mini_start % 4);
-
-// 	uint64_t nucl_mini_stop = nucl_mini_start + m - 1;
-// 	uint8_t offset_mini_stop = 2 * (nucl_mini_stop % 4);
-
-// 	// Copy the suffix to shift it
-// 	uint64_t size_suffix = size_no_mini - mini_pos;
-// 	uint64_t suffix_bytes = bytes_from_bit_array(2, size_suffix);
-// 	uint64_t suffix_start_byte = byte_mini_start;
-// 	uint64_t suffix_stop_nucl = nucl_mini_start + size_suffix - 1;
-// 	uint64_t suffix_stop_byte = suffix_stop_nucl / 4;
-
-// 	uint8_t * suffix = new uint8_t[suffix_bytes + 1];
-// 	memset(suffix, 0, suffix_bytes + 1);
-// 	memcpy(suffix, seq+suffix_start_byte, suffix_stop_byte - suffix_start_byte + 1);
-// 	leftshift8(suffix, suffix_stop_byte - suffix_start_byte + 1, offset_mini_start);
-// 	rightshift8(suffix, suffix_stop_byte - suffix_start_byte + 1, (offset_mini_stop+2)%8);
-
-// 	// // Add the suffix
-// 	uint64_t suff_first_nucl_used = offset_mini_stop/2 + 1;
-// 	uint64_t suff_first_byte_used = suff_first_nucl_used / 4;
-// 	uint64_t suff_last_nucl_used = suff_first_nucl_used + size_suffix - 1;
-// 	uint64_t suff_last_byte_used = suff_last_nucl_used / 4;
-	
-// 	uint64_t pref_fusion_byte = (nucl_mini_start) / 4;
-// 	uint64_t suff_fusion_byte = (nucl_mini_stop + 1) / 4;
-// 	cout << pref_fusion_byte << " " << suff_fusion_byte << endl;
-
-// 	// Prepare the minimizer
-// 	uint8_t * mini_shifted = new uint8_t[this->nb_bytes_mini+1];
-// 	mini_shifted[this->nb_bytes_mini] = 0;
-// 	memcpy(mini_shifted, this->minimizer, this->nb_bytes_mini);
-// 	uint64_t mini_left_offset = (8 - ((2 * m) % 8)) % 8;
-// 	uint64_t mini_last_useful_byte = (offset_mini_start/2 + m - 1) / 4;
-// 	cout << "last mini " << mini_last_useful_byte << endl;
-
-// 	leftshift8(mini_shifted, this->nb_bytes_mini, mini_left_offset);
-// 	rightshift8(mini_shifted, this->nb_bytes_mini+1, offset_mini_start);
-// 	// Add the minimizer inside the sequence
-// 	seq[byte_mini_start] = fusion8(seq[byte_mini_start], mini_shifted[0], offset_mini_start);
-// 	for (uint64_t i=1 ; i<=mini_last_useful_byte ; i++) {
-// 		seq[byte_mini_start+i] = mini_shifted[i];
-// 	}
-
-// 	uint64_t suff_shift_last_byte = (offset_mini_stop / 2 + size_suffix) / 4;
-// 	cout << suff_shift_last_byte << " " << suff_last_nucl_used << " " << suff_shift_last_byte << endl;
-
-// 	seq[suff_fusion_byte] = fusion8(seq[suff_fusion_byte], suffix[0], 2 * (suff_first_nucl_used % 4));
-// 	for (uint64_t i=1 ; i<=suff_shift_last_byte ; i++) {
-// 		seq[suff_fusion_byte+i] = suffix[i];
-// 	}
-
-// 	rightshift8(seq, seq_bytes, (8 - 2 * (seq_size % 4)) % 8);
-
-// 	delete[] suffix;
-// 	delete[] mini_shifted;
-// }
-
-
 
 void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t mini_pos) {
+
 	uint64_t seq_size = nb_kmer + k - 1;
 	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
 	uint64_t seq_left_offset = (4 - (seq_size % 4)) % 4;
