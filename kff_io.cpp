@@ -729,7 +729,7 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	// Prepare the suffix
 	uint8_t * suffix = new uint8_t[seq_bytes];
 	memset(suffix, 0, seq_bytes);
-	uint suff_nucl = k - m - mini_pos;
+	uint suff_nucl = seq_size - m - mini_pos;
 	// Values inside of seq before any change
 	uint no_mini_suff_start_nucl = mini_pos;
 	uint no_mini_suff_start_byte = no_mini_suff_start_nucl / 4;
@@ -738,6 +738,8 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	// Shift to the left
 	uint no_mini_suff_offset = no_mini_suff_start_nucl % 4;
 	leftshift8(suffix, no_mini_suff_bytes, no_mini_suff_offset * 2);
+
+
 
 	// Prepare the minimizer
 	uint8_t * mini = new uint8_t[seq_bytes];
@@ -789,8 +791,6 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	delete[] suffix;
 	delete[] mini;
 }
-
-
 
 
 
@@ -864,6 +864,7 @@ Kff_reader::~Kff_reader() {
 }
 
 void Kff_reader::read_until_first_section_block() {
+
 	while (current_section == NULL or remaining_blocks == 0) {
 		// char section_type = this->file->read_section_type();
 		char section_type = file->read_section_type();
@@ -912,6 +913,7 @@ void Kff_reader::read_until_first_section_block() {
 		}
 	}
 }
+
 
 void Kff_reader::read_next_block() {
 	// Read from the file
