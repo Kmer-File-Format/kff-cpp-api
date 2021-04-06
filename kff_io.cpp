@@ -91,7 +91,7 @@ void Kff_file::complete_header() {
 
 	// If the metadata has not been read, jump over
 	if (this->is_reader) {
-		this->fs.seekp(this->fs.tellp() + (long)this->metadata_size);
+		this->fs.seekp((long)this->fs.tellp() + (long)this->metadata_size);
 	}
 
 	// If metadata has not been write, write a 0 byte one.
@@ -216,7 +216,7 @@ char Kff_file::read_section_type() {
 
 	char type = '\0';
 	this->fs >> type;
-	this->fs.seekp(this->fs.tellp() - 1l);
+	this->fs.seekp((long)this->fs.tellp() - 1l);
 	return type;
 }
 
@@ -439,7 +439,7 @@ void Section_Raw::jump_sequence() {
 	// 3 - Determine the data size
 	size_t data_bytes_used = bytes_from_bit_array(data_size*8, nb_kmers_in_block);
 	// 4 - Jumb over the 
-	file->fs.seekp(file->fs.tellp() + (long)(seq_bytes_needed + data_bytes_used));
+	file->fs.seekp((long)file->fs.tellp() + (long)(seq_bytes_needed + data_bytes_used));
 	this->remaining_blocks -= 1;
 }
 
@@ -521,7 +521,7 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) {
 		fstream & fs = file->fs;
 		fs << 'm';
 		this->write_minimizer(this->minimizer);
-		file->fs.seekp(file->fs.tellp()+(long)nb_bytes_mini);
+		file->fs.seekp((long)file->fs.tellp()+(long)nb_bytes_mini);
 		write_value(nb_blocks, fs);
 	}
 }
@@ -631,7 +631,7 @@ void Section_Minimizer::jump_sequence() {
 	// 3 - Determine the data size
 	size_t data_bytes_used = bytes_from_bit_array(data_size*8, nb_kmers_in_block);
 	// 4 - Jumb over the 
-	file->fs.seekp(file->fs.tellp() + (long)(seq_bytes_needed + data_bytes_used));
+	file->fs.seekp((long)file->fs.tellp() + (long)(seq_bytes_needed + data_bytes_used));
 
 	this->remaining_blocks -= 1;
 }
