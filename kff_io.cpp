@@ -40,7 +40,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	// Variable init
 	this->is_writer = false;
 	this->is_reader = false;
-	auto streammode = fstream::binary;
+	std::ios_base::openmode streammode = fstream::binary;
 
 	// Determine the mode and open the file
 	if (mode[0] == 'w') {
