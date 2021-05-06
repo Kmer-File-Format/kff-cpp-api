@@ -16,6 +16,11 @@
 #ifndef KFF_IO
 #define KFF_IO
 
+#ifdef _WIN32
+#include <iso646.h>
+using uint = unsigned long;
+#endif
+
 // the configured options and settings for Tutorial
 #define KFF_VERSION_MAJOR @KFF_VERSION_MAJOR@
 #define KFF_VERSION_MINOR @KFF_VERSION_MINOR@
