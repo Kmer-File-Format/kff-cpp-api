@@ -67,6 +67,8 @@ private:
 public:
 	uint8_t major_version;
 	uint8_t minor_version;
+	bool uniqueness;
+	bool canonicity;
 
 	std::fstream fs;
 	// encoding:        A:0  C:1 G:3 T:2
@@ -123,10 +125,16 @@ public:
 	 * Set the encoding used to compact the nucleotides into 2-bits values.
 	 * Only the two lower bits of each uint8_t will be used.
 	 * The 4 2-bits values must be diferent to each other.
-	 *
-	 * @param encoding An array that must contains the 4 encoding values in order A, C, G and T.
-	 */
+	**/
 	void write_encoding(uint8_t * encoding);
+	/** Set the uniqueness of the kmers in the file.
+	  * true means that no kmer will be present 2 times in the file.
+	  **/
+	void set_uniqueness(bool uniqueness);
+	/** Set the cononicity of the kmers in the file.
+	  * true means that if a kmer is present in the file, its reverse complement is absent.
+	  **/
+	void set_canonicity(bool canonicity);
 	/**
 	 * Write the metadata entered by the user.
 	 * Also write all the needed values like metadata section size into the file.

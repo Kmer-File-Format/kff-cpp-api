@@ -81,7 +81,15 @@ Kff_file::Kff_file(const string filename, const string mode) {
 
 	// Write the signature and the version at the beginning of the file
 	if (this->is_writer) {
-		this->fs << "KFF" << (char)KFF_VERSION_MAJOR << (char)KFF_VERSION_MINOR;
+		// Signature
+		this->fs << "KFF";
+		// KFF version
+		this->fs << (char)KFF_VERSION_MAJOR << (char)KFF_VERSION_MINOR;
+		// Write default encoding
+		this->fs << (char)0b00011110;
+		// kmer fundamental properties (default all to false)
+		//         Uniqueness Canonicity
+		this->fs << (char)0 << (char)0;
 	}
 
 	// Read the header
@@ -108,14 +116,22 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		// Back to the start
 		this->fs.seekg(3, this->fs.beg);
 
+		// Version reading
 		this->fs >> this->major_version >> this->minor_version;
-
 		if (KFF_VERSION_MAJOR < this->major_version or (KFF_VERSION_MAJOR == this->major_version and KFF_VERSION_MINOR < this->minor_version)) {
 			cerr << "The software version " << (uint)KFF_VERSION_MAJOR << "." << (uint)KFF_VERSION_MINOR << " can't read files writen in version " << (uint)this->major_version << "." << (uint)this->minor_version << endl;
 			throw "Unexpected version number";
 		}
 
+		// Encoding load
 		this->read_encoding();
+		// Read global flags
+		char flag;
+		this->fs >> flag;
+		this->uniqueness = flag != 0;
+		this->fs >> flag;
+		this->canonicity = flag != 0;
+		// Read metadata
 		this->read_size_metadata();
 	}
 }
@@ -200,7 +216,23 @@ void Kff_file::write_encoding(uint8_t a, uint8_t c, uint8_t g, uint8_t t) {
 
 	// Write to file
 	uint8_t code = (a << 6) | (c << 4) | (g << 2) | t;
+	long position = this->fs.tellp();
+	this->fs.seekg(5, this->fs.beg);
 	this->fs << code;
+	this->fs.seekg(position, this->fs.beg);
+}
+
+void Kff_file::set_uniqueness(bool uniqueness) {
+	long position = this->fs.tellp();
+	this->fs.seekg(6, this->fs.beg);
+	this->fs << (char)(uniqueness ? 1 : 0);
+	this->fs.seekg(position, this->fs.beg);	
+}
+void Kff_file::set_canonicity(bool canonicity) {
+	long position = this->fs.tellp();
+	this->fs.seekg(6, this->fs.beg);
+	this->fs << (char)(canonicity ? 1 : 0);
+	this->fs.seekg(position, this->fs.beg);
 }
 
 void Kff_file::write_encoding(uint8_t * encoding) {
@@ -918,7 +950,6 @@ void Kff_reader::read_until_first_section_block() {
 
 	while (current_section == NULL or remaining_blocks == 0) {
 		if (this->file->fs.tellp() == this->file->end_position) {
-			cout << "Stop" << endl;
 			break;
 		}
 
