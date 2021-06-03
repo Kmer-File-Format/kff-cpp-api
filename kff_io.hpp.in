@@ -44,6 +44,7 @@ private:
 	bool is_reader;
 	bool tmp_closed;
 	std::string filename;
+	long end_position;
 
 	// True when the header have been read/write and the fs pointer is after.
 	bool header_over;

@@ -5,6 +5,7 @@
 #include <math.h>
 
 #include <map>
+#include <vector>
 
 #include "kff_io.hpp"
 
@@ -14,12 +15,30 @@ using namespace std;
 // Utils
 
 template<typename T>
+void store_big_endian(uint8_t * buff, const T& data) {
+	for (int b = sizeof(T) - 1; b >= 0; --b) {
+		*buff++ = data >> (8 * b);
+	}
+}
+template<typename T>
 void write_value(T val, fstream & fs) {
-	fs.write((char*)&val, sizeof(T));
+	uint8_t tmp[sizeof(T)];
+	store_big_endian(tmp, val);
+	fs.write((char *)tmp, sizeof(val));
+}
+
+template<typename T>
+void load_big_endian(uint8_t * buff, T& data) {
+	data = 0;
+	for (uint b=0 ; b < sizeof(T); b++) {
+		data |= ((T)buff[b]) << 8 * (sizeof(data) - 1 - b);
+	}
 }
 template<typename T>
 void read_value(T & val, fstream & fs) {
-	fs.read((char*)&val, sizeof(T));
+	uint8_t tmp[sizeof(T)];
+	fs.read((char *)tmp, sizeof(val));
+	load_big_endian(tmp, val);
 }
 
 uint64_t bytes_from_bit_array(uint64_t bits_per_elem, uint64_t nb_elem) {
@@ -60,13 +79,35 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	this->tmp_closed = false;
 	this->header_over = false;
 
-	// Write the version at the beginning of the file
+	// Write the signature and the version at the beginning of the file
 	if (this->is_writer) {
-		this->fs << (char)KFF_VERSION_MAJOR << (char)KFF_VERSION_MINOR;
+		this->fs << "KFF" << (char)KFF_VERSION_MAJOR << (char)KFF_VERSION_MINOR;
 	}
 
 	// Read the header
 	else if (this->is_reader) {
+		// Header integrity marker
+		char a,b,c;
+		this->fs >> a >> b >> c;
+		if (a != 'K' or b != 'F' or c != 'F') {
+			cerr << "Absent KFF signature at the beginning of the file." << endl;
+			cerr << "Please check that the file is not corrupted" << endl;
+			throw "Absent signature at the beginning";
+		}
+
+		// Footer integrity marker
+		this->fs.seekg(-3, this->fs.end);
+		this->end_position = this->fs.tellp();
+		this->fs >> a >> b >> c;
+		if (a != 'K' or b != 'F' or c != 'F') {
+			cerr << "Absent KFF signature at the end of the file." << endl;
+			cerr << "Please check that the file is not corrupted" << endl;
+			throw "Absent signature at the end";
+		}
+
+		// Back to the start
+		this->fs.seekg(3, this->fs.beg);
+
 		this->fs >> this->major_version >> this->minor_version;
 
 		if (KFF_VERSION_MAJOR < this->major_version or (KFF_VERSION_MAJOR == this->major_version and KFF_VERSION_MINOR < this->minor_version)) {
@@ -124,6 +165,14 @@ void Kff_file::reopen() {
 
 
 void Kff_file::close() {
+	// Write the end signature
+	if (this->tmp_closed)
+		this->reopen();
+
+	// End signature
+	if (this->is_writer)
+		this->fs << "KFF";
+
 	if (this->fs.is_open())
 		this->fs.close();
 	this->tmp_closed = false;
@@ -266,7 +315,7 @@ void Section_GV::write_var(const string & var_name, uint64_t value) {
 }
 
 void Section_GV::read_section() {
-	char type;
+	char type = '\0';
 	file->fs >> type;
 	if (type != 'v')
 		throw "The section do not start with the 'v' char, you can't open a Global Variable section.";
@@ -291,7 +340,7 @@ void Section_GV::read_var() {
 	}
 
 	// Value reading
-	uint64_t value;
+	uint64_t value = 0;
 	read_value(value, file->fs);
 
 	// Saving
@@ -855,6 +904,8 @@ Kff_reader::Kff_reader(std::string filename) {
 Kff_reader::~Kff_reader() {
 	delete[] this->current_kmer;
 	delete[] this->current_data;
+	if (this->current_section != NULL)
+		delete this->current_section;
 
 	for (uint i=0 ; i<4 ; i++)
 		delete[] this->current_shifts[i];
@@ -866,11 +917,13 @@ Kff_reader::~Kff_reader() {
 void Kff_reader::read_until_first_section_block() {
 
 	while (current_section == NULL or remaining_blocks == 0) {
+		if (this->file->fs.tellp() == this->file->end_position) {
+			cout << "Stop" << endl;
+			break;
+		}
+
 		// char section_type = this->file->read_section_type();
 		char section_type = file->read_section_type();
-		if (section_type == 0)
-			if (this->file->fs.eof())
-				break;
 		// --- Update data structure sizes ---
 		if (section_type == 'v') {
 			// Read the global variable block
@@ -931,9 +984,9 @@ void Kff_reader::read_next_block() {
 }
 
 bool Kff_reader::has_next() {
-	if (current_section == NULL and !file->fs.eof())
+	if (current_section == NULL and (file->end_position > file->fs.tellp()))
 		read_until_first_section_block();
-	return !file->fs.eof();
+	return file->end_position > file->fs.tellp();
 }
 
 uint64_t Kff_reader::next_block(uint8_t* & sequence, uint8_t* & data) {

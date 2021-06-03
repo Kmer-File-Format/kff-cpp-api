@@ -20,7 +20,7 @@ int main(int argc, char * argv[]) {
 	file->write_encoding(0, 1, 3, 2);
 	// Set metadata
 	std::string meta = "D@rK W@99ic";
-	file->write_metadata(11, (uint8_t *)meta.c_str());
+	file->write_metadata(meta.length(), (uint8_t *)meta.c_str());
 
 	// --- global variable write ---
 
@@ -79,7 +79,6 @@ int main(int argc, char * argv[]) {
 	uint8_t * metadata = new uint8_t[file->metadata_size + 1];
 	file->read_metadata(metadata);
 	metadata[file->metadata_size] = '\0';
-	cout << "metadata: " << string((char *)metadata) << endl << endl;
 	delete[] metadata;
 
 	// --- Global variable read ---
@@ -95,7 +94,6 @@ int main(int argc, char * argv[]) {
 	cout << "Read section " << section_name << endl;
 	sr = Section_Raw(file);
 	cout << "nb blocks: " << sr.nb_blocks << endl;
-
 	uint8_t * seq = new uint8_t[(max + k) / 8 + 1];
 	uint8_t * data = new uint8_t[max * data_size];
 	for (uint64_t i=0 ; i<sr.nb_blocks ; i++) {
