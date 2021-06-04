@@ -308,15 +308,16 @@ Section_GV::Section_GV(Kff_file * file) {
 	if (file->tmp_closed) {
 		file->reopen();
 	}
-
 	if (not file->header_over) {
 		file->complete_header();
 	}
 
 	this->file = file;
-	this->begining = file->fs.tellp();
+	this->beginning = file->fs.tellp();
 	this->nb_vars = 0;
 	this->is_closed = true;
+
+	this->file->global_vars.clear();
 
 	if (file->is_reader) {
 		this->read_section();
@@ -389,13 +390,76 @@ void Section_GV::close() {
 		fstream &	 fs = this->file->fs;
 		long position = fs.tellp();
 		// Go write the number of variables in the correct place
-		fs.seekp(this->begining + 1);
+		fs.seekp(this->beginning + 1);
 		write_value(nb_vars, fs);
 
 		fs.seekp(position);
 		this->is_closed = true;
 	}
 }
+
+
+
+Section_Index::Section_Index(Kff_file * file) {
+	if (file->tmp_closed) {
+		file->reopen();
+	}
+	if (not file->header_over) {
+		file->complete_header();
+	}
+	this->file = file;
+	this->beginning = file->fs.tellp();
+	this->next_index = 0;
+
+	if (this->file->is_reader) {
+		fstream & fs = this->file->fs;
+		char type = '\0';
+		fs >> type;
+		if (type != 'i')
+			throw "The section do not start with the 'i' char, you can not open an Index section.";
+
+		uint64_t nb_vars;
+		read_value(nb_vars, fs);
+		for (uint64_t i=0 ; i<nb_vars ; i++) {
+			char c = '\0';
+			int64_t idx = 0;
+			read_value(c, fs);
+			read_value(idx, fs);
+			this->index[idx] = c;
+		}
+
+		if (nb_vars != this->index.size())
+			throw "index collision in i section";
+
+		read_value(this->next_index, fs);
+	}
+}
+
+void Section_Index::register_section(char section_type, int64_t index) {
+	this->index[index] = section_type;
+}
+
+void Section_Index::set_next_index(int64_t index) {
+	this->next_index = index;
+}
+
+void Section_Index::close() {
+	if (this->file->is_writer) {
+		// Section header
+		this->file->fs << (char)'i';
+		write_value((uint64_t)this->index.size(), this->file->fs);
+		// Write index
+		for (std::map<int64_t, char>::iterator it=this->index.begin(); it!=this->index.end(); ++it) {
+			// Section type
+		  write_value(it->second, this->file->fs);
+		  // Section index
+		  write_value(it->first, this->file->fs);
+		}
+		write_value(this->next_index, this->file->fs);
+	}
+}
+
+
 
 Block_section_reader * Block_section_reader::construct_section(Kff_file * file) {
 	// Very and complete if needed the header
@@ -434,7 +498,7 @@ Section_Raw::Section_Raw(Kff_file * file) {
 	}
 
 	this->file = file;
-	this->begining = file->fs.tellp();
+	this->beginning = file->fs.tellp();
 	this->nb_blocks = 0;
 	this->is_closed = true;
 
@@ -534,7 +598,7 @@ void Section_Raw::close() {
 		fstream &	 fs = this->file->fs;
 		long position = fs.tellp();
 		// Go write the number of variables in the correct place
-		fs.seekp(this->begining + 1);
+		fs.seekp(this->beginning + 1);
 		write_value(nb_blocks, fs);
 		fs.seekp(position);
 		this->is_closed = true;
@@ -575,7 +639,7 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) {
 	}
 
 	this->file = file;
-	this->begining = file->fs.tellp();
+	this->beginning = file->fs.tellp();
 	this->nb_blocks = 0;
 	this->is_closed = true;
 
@@ -614,7 +678,7 @@ Section_Minimizer::~Section_Minimizer() {
 Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 	file = sm.file;
 	sm.file = nullptr;
-	begining = sm.begining;
+	beginning = sm.beginning;
 	is_closed = sm.is_closed;
 	nb_blocks = sm.nb_blocks;
 	m = sm.m;
@@ -631,7 +695,7 @@ void Section_Minimizer::write_minimizer(uint8_t * minimizer) {
 	}
 
 	uint64_t pos = file->fs.tellp();
-	file->fs.seekp(this->begining+1);
+	file->fs.seekp(this->beginning+1);
 	file->fs.write((char *)minimizer, this->nb_bytes_mini);
 	memcpy(this->minimizer, minimizer, this->nb_bytes_mini);
 	file->fs.seekp(pos);
@@ -893,7 +957,7 @@ void Section_Minimizer::close() {
 		fstream &	fs = this->file->fs;
 		long position = fs.tellp();
 		// Go write the number of variables in the correct place
-		fs.seekp(this->begining + 1l + (long)this->nb_bytes_mini);
+		fs.seekp(this->beginning + 1l + (long)this->nb_bytes_mini);
 		write_value(nb_blocks, fs);
 		fs.seekp(position);
 		this->is_closed = true;
@@ -991,7 +1055,10 @@ void Kff_reader::read_until_first_section_block() {
 			}
 		}
 		// Mount data from the files to the datastructures.
-		else {
+		else if (section_type == 'i') {
+			Section_Index index(file);
+			index.close();
+		} else {
 			current_section = Block_section_reader::construct_section(file);
 			remaining_blocks = current_section->nb_blocks;
 		}

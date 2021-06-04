@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <cstring>
+#include <map>
 
 #include "kff_io.hpp"
 
@@ -22,17 +23,23 @@ int main(int argc, char * argv[]) {
 	std::string meta = "D@rK W@99ic";
 	file->write_metadata(meta.length(), (uint8_t *)meta.c_str());
 
+	// Prepare for indexing
+	map<long, char> section_absolute_indexes;
+
 	// --- global variable write ---
 
 	// Set global variables
 	Section_GV sgv(file);
+	section_absolute_indexes[sgv.beginning] = 'v';
 	sgv.write_var("k", 10);
+	sgv.write_var("m", 8);
 	sgv.write_var("max", 240);
 	sgv.write_var("data_size", 1);
 	sgv.close();
 
 	// --- Write a raw sequence bloc ---
 	Section_Raw sr(file);
+	section_absolute_indexes[sr.beginning] = 'r';
 	// 2-bit sequence encoder
 	uint8_t encoded[1024];
 	uint8_t counts[255];
@@ -47,12 +54,9 @@ int main(int argc, char * argv[]) {
 	sr.write_compacted_sequence(encoded, 11, counts);
 	sr.close();
 
-	sgv = Section_GV(file);
-	sgv.write_var("m", 8);
-	sgv.close();
-
 	// --- write a minimizer sequence block ---
 	Section_Minimizer sm(file);
+	section_absolute_indexes[sm.beginning] = 'm';
 	encode_sequence("AAACTGAT", encoded);
 	sm.write_minimizer(encoded);
 
@@ -68,6 +72,23 @@ int main(int argc, char * argv[]) {
 
 	sm.close();
 
+	// --- Index writing ---
+
+	Section_Index index(file);
+	long end_pos = index.beginning + 17 + 9 * section_absolute_indexes.size();
+	for (std::map<long, char>::iterator it=section_absolute_indexes.begin() ; it!=section_absolute_indexes.end() ; ++it) {
+		cout << (int64_t)end_pos-it->first << " " << end_pos << " " << it->first << endl;
+		index.register_section((char)it->second, (int64_t)it->first - end_pos);
+	}
+	index.close();
+
+	// --- Footer ---
+
+	sgv = Section_GV(file);
+	sgv.write_var("first_index", index.beginning);
+	sgv.write_var("footer_size", 9 + 2 * (12 + 8));
+	sgv.close();
+
 	// Close and end writing of the file
 	file->close();
 	delete file;
@@ -81,11 +102,57 @@ int main(int argc, char * argv[]) {
 	metadata[file->metadata_size] = '\0';
 	delete[] metadata;
 
+	// --- index discovering (Will be simplified in futur versions) ---
+	long current_pos = file->fs.tellp();
+
+	// Look at the footer
+	file->fs.seekg(-23, file->fs.end);
+	// Try to extract the footer size
+	stringstream ss;
+	char c = 'o';
+	for (uint i=0 ; i<11 ; i++) {
+		file->fs >> c;
+		ss << c;
+	}
+	if (ss.str().compare("footer_size") != 0) {
+		cerr << "No footer !" << endl;
+		exit(1);
+	}
+	file->fs >> c; // remove the '\0'
+
+	uint64_t size = 0;
+	for (uint i=0 ; i<8 ; i++) {
+		uint8_t val;
+		file->fs >> val;
+		size = (size << 8) | val;
+	}
+	// Jump to value section start
+	file->fs.seekg(-size-3, file->fs.end);
+	Section_GV footer(file);
+	uint64_t i_pos = file->global_vars["first_index"];
+	footer.close();
+
+	// --- index reading ---
+	cout << "First index at position " << i_pos << endl;
+	// Jump to the index position
+	file->fs.seekg(i_pos, file->fs.beg);
+	// Read the index
+	Section_Index si(file);
+	for (std::map<int64_t, char>::iterator it=si.index.begin() ; it!=si.index.end() ; ++it) {
+		cout << "section " << (char)it->second << " at relative position " << (int)it->first << endl;
+	}
+	si.close();
+	cout << endl;
+
+	file->fs.seekp(current_pos);
+
+
 	// --- Global variable read ---
 	char section_name = file->read_section_type();
 	sgv = Section_GV(file);
 
 	uint64_t k = file->global_vars["k"];
+	uint64_t m = file->global_vars["m"];
 	uint64_t max = file->global_vars["max"];
 	uint64_t data_size = file->global_vars["data_size"];
 
@@ -105,13 +172,6 @@ int main(int argc, char * argv[]) {
 			cout << (uint64_t)data[i] << ", ";
 		cout << endl;
 	}
-	cout << endl;
-
-	// --- Read variables to load m ---
-	section_name = file->read_section_type();
-	cout << "Read section " << section_name << endl;
-	sgv = Section_GV(file);
-	uint64_t m = file->global_vars["m"];
 	cout << endl;
 
 	// --- Read Minimizer block ---
