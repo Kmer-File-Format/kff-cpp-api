@@ -90,6 +90,8 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		// kmer fundamental properties (default all to false)
 		//         Uniqueness Canonicity
 		this->fs << (char)0 << (char)0;
+
+		this->indexed = true;
 	}
 
 	// Read the header
@@ -139,6 +141,12 @@ Kff_file::Kff_file(const string filename, const string mode) {
 
 Kff_file::~Kff_file() {
 	this->close();
+}
+
+
+void Kff_file::set_indexation(bool indexed) {
+	if (this->is_writer)
+		this->indexed = indexed;
 }
 
 
@@ -302,9 +310,9 @@ char Kff_file::read_section_type() {
 }
 
 
-// ----- Global variables sections -----
+Section::Section(Kff_file * file) {
+	this->file = file;
 
-Section_GV::Section_GV(Kff_file * file) {
 	if (file->tmp_closed) {
 		file->reopen();
 	}
@@ -312,48 +320,42 @@ Section_GV::Section_GV(Kff_file * file) {
 		file->complete_header();
 	}
 
-	this->file = file;
 	this->beginning = file->fs.tellp();
-	this->nb_vars = 0;
-	this->is_closed = true;
+}
 
+void Section::close() {
+	this->file = nullptr;
+}
+
+
+// ----- Global variables sections -----
+
+Section_GV::Section_GV(Kff_file * file) : Section(file) {
+	this->nb_vars = 0;
 	this->file->global_vars.clear();
 
-	if (file->is_reader) {
+	if (this->file->is_reader) {
 		this->read_section();
 	}
 
 	if (file->is_writer) {
-		this->is_closed = false;
-		fstream & fs = file->fs;
-		fs << 'v';
-		write_value(nb_vars, fs);
+		file->fs << 'v';
 	}
 }
 
 void Section_GV::write_var(const string & var_name, uint64_t value) {
-	assert(!this->is_closed);
-
-	if (file->tmp_closed) {
-		file->reopen();
-	}
-
-	auto & fs = this->file->fs;
-	fs << var_name << '\0';
-	write_value(value, fs);
 	this->nb_vars += 1;
-
 	this->vars[var_name] = value;
 	this->file->global_vars[var_name] = value;
 }
 
 void Section_GV::read_section() {
 	char type = '\0';
-	file->fs >> type;
+	this->file->fs >> type;
 	if (type != 'v')
 		throw "The section do not start with the 'v' char, you can't open a Global Variable section.";
 
-	read_value(this->nb_vars, file->fs);
+	read_value(this->nb_vars, this->file->fs);
 	for (uint64_t i=0 ; i<nb_vars ; i++) {
 		this->read_var();
 	}
@@ -386,29 +388,23 @@ void Section_GV::close() {
 	if (file->is_writer) {
 		if (file->tmp_closed)
 			file->reopen();
-		// Save current position
-		fstream &	 fs = this->file->fs;
-		long position = fs.tellp();
-		// Go write the number of variables in the correct place
-		fs.seekp(this->beginning + 1);
-		write_value(nb_vars, fs);
 
-		fs.seekp(position);
-		this->is_closed = true;
+		fstream &	 fs = this->file->fs;
+		// write the number of block values
+		write_value(this->nb_vars, fs);
+		// Write the variables
+		for (std::map<std::string,uint64_t>::iterator var_tuple=this->vars.begin() ; var_tuple != this->vars.end() ; var_tuple++) {
+			fs << var_tuple->first << '\0';
+			write_value(var_tuple->second, fs);
+		}
 	}
+
+	Section::close();
 }
 
 
 
-Section_Index::Section_Index(Kff_file * file) {
-	if (file->tmp_closed) {
-		file->reopen();
-	}
-	if (not file->header_over) {
-		file->complete_header();
-	}
-	this->file = file;
-	this->beginning = file->fs.tellp();
+Section_Index::Section_Index(Kff_file * file) : Section(file) {
 	this->next_index = 0;
 
 	if (this->file->is_reader) {
@@ -457,6 +453,8 @@ void Section_Index::close() {
 		}
 		write_value(this->next_index, this->file->fs);
 	}
+
+	Section::close();
 }
 
 
@@ -477,7 +475,7 @@ Block_section_reader * Block_section_reader::construct_section(Kff_file * file) 
 
 // ----- Raw sequence section -----
 
-Section_Raw::Section_Raw(Kff_file * file) {
+Section_Raw::Section_Raw(Kff_file * file) : Section(file){
 	if (file->global_vars.find("k") == file->global_vars.end())
 		throw "Impossible to read the raw section due to missing k variable";
 	if(file->global_vars.find("max") == file->global_vars.end())
@@ -489,18 +487,7 @@ Section_Raw::Section_Raw(Kff_file * file) {
 	uint64_t max = file->global_vars["max"];
 	uint64_t data_size = file->global_vars["data_size"];
 
-	if (file->tmp_closed) {
-		file->reopen();
-	}
-
-	if (not file->header_over) {
-		file->complete_header();
-	}
-
-	this->file = file;
-	this->beginning = file->fs.tellp();
 	this->nb_blocks = 0;
-	this->is_closed = true;
 
 	this->k = k;
 	this->max = max;
@@ -515,10 +502,8 @@ Section_Raw::Section_Raw(Kff_file * file) {
 	}
 
 	if (file->is_writer) {
-		this->is_closed = false;
-		fstream & fs = file->fs;
-		fs << 'r';
-		write_value(nb_blocks, fs);
+		file->fs << 'r';
+		write_value(nb_blocks, file->fs);
 	}
 }
 
@@ -537,13 +522,12 @@ uint32_t Section_Raw::read_section_header() {
 }
 
 void Section_Raw::write_compacted_sequence(uint8_t* seq, uint64_t seq_size, uint8_t * data_array) {
-	assert(!this->is_closed);
-	if (file->tmp_closed) {
-		file->reopen();
+	if (this->file->tmp_closed) {
+		this->file->reopen();
 	}
 	// 1 - Write nb kmers
 	uint64_t nb_kmers = seq_size - k + 1;
-	file->fs.write((char*)&nb_kmers, this->nb_kmers_bytes);
+	this->file->fs.write((char*)&nb_kmers, this->nb_kmers_bytes);
 	// 2 - Write sequence
 	uint64_t seq_bytes_needed = bytes_from_bit_array(2, seq_size);
 	this->file->fs.write((char *)seq, seq_bytes_needed);
@@ -558,14 +542,14 @@ uint64_t Section_Raw::read_compacted_sequence(uint8_t* seq, uint8_t* data) {
 	uint64_t nb_kmers_in_block = 1;
 	// 1 - Read the number of kmers in the sequence
 	if (nb_kmers_bytes != 0)
-		file->fs.read((char*)&nb_kmers_in_block, this->nb_kmers_bytes);
+		this->file->fs.read((char*)&nb_kmers_in_block, this->nb_kmers_bytes);
 	// 2 - Read the sequence
 	size_t seq_size = nb_kmers_in_block + k - 1;
 	size_t seq_bytes_needed = bytes_from_bit_array(2, seq_size);
-	file->fs.read((char*)seq, seq_bytes_needed);
+	this->file->fs.read((char*)seq, seq_bytes_needed);
 	// 3 - Read the data.
 	uint64_t data_bytes_used = bytes_from_bit_array(data_size*8, nb_kmers_in_block);
-	file->fs.read((char*)data, data_bytes_used);
+	this->file->fs.read((char*)data, data_bytes_used);
 
 	this->remaining_blocks -= 1;
 
@@ -601,7 +585,6 @@ void Section_Raw::close() {
 		fs.seekp(this->beginning + 1);
 		write_value(nb_blocks, fs);
 		fs.seekp(position);
-		this->is_closed = true;
 	}
 
 	if (file->is_reader) {
@@ -609,13 +592,15 @@ void Section_Raw::close() {
 		while (this->remaining_blocks > 0)
 			this->jump_sequence();
 	}
+
+	Section::close();
 }
 
 
 
 // ----- Minimizer sequence section -----
 
-Section_Minimizer::Section_Minimizer(Kff_file * file) {
+Section_Minimizer::Section_Minimizer(Kff_file * file) : Section(file) {
 	if (file->global_vars.find("k") == file->global_vars.end())
 		throw "Impossible to read the minimizer section due to missing k variable";
 	if (file->global_vars.find("m") == file->global_vars.end())
@@ -630,18 +615,7 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) {
 	uint64_t max = file->global_vars["max"];
 	uint64_t data_size = file->global_vars["data_size"];
 
-	if (file->tmp_closed) {
-		file->reopen();
-	}
-
-	if (not file->header_over) {
-		file->complete_header();
-	}
-
-	this->file = file;
-	this->beginning = file->fs.tellp();
 	this->nb_blocks = 0;
-	this->is_closed = true;
 
 	this->k = k;
 	this->m = m;
@@ -662,7 +636,6 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) {
 	}
 
 	if (file->is_writer) {
-		this->is_closed = false;
 		fstream & fs = file->fs;
 		fs << 'm';
 		this->write_minimizer(this->minimizer);
@@ -679,7 +652,6 @@ Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 	file = sm.file;
 	sm.file = nullptr;
 	beginning = sm.beginning;
-	is_closed = sm.is_closed;
 	nb_blocks = sm.nb_blocks;
 	m = sm.m;
 	nb_bytes_mini = sm.nb_bytes_mini;
@@ -689,7 +661,6 @@ Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 }
 
 void Section_Minimizer::write_minimizer(uint8_t * minimizer) {
-	assert(!this->is_closed);
 	if (file->tmp_closed) {
 		file->reopen();
 	}
@@ -712,7 +683,7 @@ uint32_t Section_Minimizer::read_section_header() {
 		throw "The section do not start with the 'm' char, you can't open a Minimizer sequence section.";
 
 	// Read the minimizer
-	file->fs.read((char *)this->minimizer, this->nb_bytes_mini);
+	fs.read((char *)this->minimizer, this->nb_bytes_mini);
 
 	// Read the number of following blocks
 	read_value(nb_blocks, fs);
@@ -721,7 +692,6 @@ uint32_t Section_Minimizer::read_section_header() {
 }
 
 void Section_Minimizer::write_compacted_sequence_without_mini(uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
-	assert(!this->is_closed);
 	if (file->tmp_closed) {
 		file->reopen();
 	}
@@ -817,7 +787,6 @@ static uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index
 }
 
 void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
-	assert(!this->is_closed);
 	if (file->tmp_closed) {
 		file->reopen();
 	}
@@ -960,7 +929,6 @@ void Section_Minimizer::close() {
 		fs.seekp(this->beginning + 1l + (long)this->nb_bytes_mini);
 		write_value(nb_blocks, fs);
 		fs.seekp(position);
-		this->is_closed = true;
 	}
 
 	if (file->is_reader) {
@@ -968,6 +936,8 @@ void Section_Minimizer::close() {
 		while (this->remaining_blocks > 0)
 			this->jump_sequence();
 	}
+
+	Section::close();
 }
 
 

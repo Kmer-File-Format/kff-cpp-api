@@ -122,7 +122,21 @@ You can use *read_section_type* to get this char and then use the dedicated func
   char type = infile.read_section_type();
 ```
 
-### Global variable section
+### Index section
+
+When 'i' char is detected, you can call the opening of a Section_Index.
+The file slice containing the index is read on section creation.
+All the pairs (relative position, section type) from the section are then accessible over the index map of the Section_Index object.
+
+```C++
+  // Open the index section
+  Section_Index si(&infile);
+  // Print the index pair
+  for (auto it : si.index)
+    std::cout << "position " << it.first << " -> " << it.second << " section" << std::endl;
+```
+
+### Value section
 
 When 'v' char is detected, you can call the the opening of a Section_GV.
 The creation of the section on a file will automatically read the variables inside of the section.
@@ -292,9 +306,9 @@ If you do not set any metadata, the API will automatically create a 0 Byte metad
 ```
 
 
-### Global Variable section
+### Values section
 
-GV sections start with the number of variables described in it.
+v sections start with the number of variables described in it.
 Initially this value is automatically set to 0 and updated when you call the close function.
 
 ```C++
@@ -308,6 +322,16 @@ Initially this value is automatically set to 0 and updated when you call the clo
   sgv.write_var("data_size", 1);
 
   sgv.close();
+```
+
+
+### Index section
+
+To write a i section, you only need to register the pairs (relative position, section type) using the Section_Index object function *register_section*.
+
+
+```C++
+  
 ```
 
 

@@ -77,7 +77,6 @@ int main(int argc, char * argv[]) {
 	Section_Index index(file);
 	long end_pos = index.beginning + 17 + 9 * section_absolute_indexes.size();
 	for (std::map<long, char>::iterator it=section_absolute_indexes.begin() ; it!=section_absolute_indexes.end() ; ++it) {
-		cout << (int64_t)end_pos-it->first << " " << end_pos << " " << it->first << endl;
 		index.register_section((char)it->second, (int64_t)it->first - end_pos);
 	}
 	index.close();
@@ -115,6 +114,7 @@ int main(int argc, char * argv[]) {
 		ss << c;
 	}
 	if (ss.str().compare("footer_size") != 0) {
+		cout << ss.str() << endl;
 		cerr << "No footer !" << endl;
 		exit(1);
 	}

@@ -49,10 +49,11 @@ private:
 	// True when the header have been read/write and the fs pointer is after.
 	bool header_over;
 
+	friend class Section;
 	friend class Section_GV;
+	friend class Section_Index;
 	friend class Section_Raw;
 	friend class Section_Minimizer;
-	friend class Section_Index;
 	friend class Kff_reader;
 
 	/**
@@ -70,6 +71,9 @@ public:
 	uint8_t minor_version;
 	bool uniqueness;
 	bool canonicity;
+
+	bool indexed;
+	std::map<int64_t, char> section_positions;
 
 	std::fstream fs;
 	// encoding:        A:0  C:1 G:3 T:2
@@ -92,6 +96,11 @@ public:
 	 * Destroy properly a Kff object, closing the file behind it.
 	 */
 	~Kff_file();
+	/**
+	 * In writing mode, the KFF files are indexed by default.
+	 * This function allows the deactivation of the footer index generation.
+	 */
+	void set_indexation(bool indexed);
 	/**
 	 * Release the file pointer by temporarily close the file stream.
 	 * The usage of this function increase the execution time.
@@ -178,28 +187,36 @@ public:
 };
 
 
+class Section {
+	protected:
+		Kff_file * file;
+
+	public:
+		long beginning;
+
+		Section(Kff_file * file);
+		virtual ~Section() {};
+		void close();
+};
+
 /**
  * File manipulator for Global Variable sections.
  *
  */
-class Section_GV {
+class Section_GV : public Section {
 private:
-	Kff_file * file;
-	bool is_closed;
-
 	void read_section();
 	void read_var();
 
-	friend class Kff_file;
+	// friend class Kff_file;
 
 public:
-	long beginning;
 	uint64_t nb_vars;
 	/**
 	 * A map containing all the declared variables for this section.
 	 * If the file is opened in r mode, all the variables of this section have been loaded during the object construction.
 	 */
-	std::unordered_map<std::string, uint64_t> vars;
+	std::map<std::string, uint64_t> vars;
 
 	Section_GV(Kff_file * file);
 	/**
@@ -268,15 +285,12 @@ public:
  * File manipulator for Raw sections.
  *
  */
-class Section_Index {
+class Section_Index : public Section {
 private:
-	Kff_file * file;
-	bool is_closed;
 
 	friend class Kff_file;
 
 public:
-	long beginning;
 	std::map<int64_t, char> index;
 	int64_t next_index;
 
@@ -291,18 +305,14 @@ public:
  * File manipulator for Raw sections.
  *
  */
-class Section_Raw: public Block_section_reader {
+class Section_Raw: public Section, public Block_section_reader {
 private:
-	Kff_file * file;
-	bool is_closed;
-
 	friend class Kff_file;
 	friend class Block_section_reader;
 
 	uint32_t read_section_header();
 
 public:
-	long beginning;
 	Section_Raw(Kff_file * file);
 	~Section_Raw(){};
 
@@ -344,14 +354,10 @@ public:
  * File manipulator for Minimizer sections.
  *
  */
-class Section_Minimizer: public Block_section_reader {
+class Section_Minimizer : public Section, public Block_section_reader {
 private:
 	Section_Minimizer(Section_Minimizer & sm) = delete;
 	Section_Minimizer() = delete;
-
-	
-	Kff_file * file;
-	bool is_closed;
 
 	friend class Kff_file;
 	friend class Block_section_reader;
@@ -363,8 +369,6 @@ private:
 	uint32_t read_section_header();
 
 public:
-	long beginning;
-	
 	Section_Minimizer(Kff_file * file);
 	Section_Minimizer& operator= ( Section_Minimizer && sm);
 	~Section_Minimizer();
