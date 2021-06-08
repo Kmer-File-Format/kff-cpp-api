@@ -28,7 +28,7 @@ using uint = unsigned long;
 class Section_GV;
 class Section_Raw;
 class Section_Minimizer;
-
+class Section_Index;
 class Kff_reader;
 
 /**
@@ -67,12 +67,15 @@ private:
 	void read_size_metadata();
 
 	void write_footer();
+	void footer_discovery();
 
 public:
 	uint8_t major_version;
 	uint8_t minor_version;
 	bool uniqueness;
 	bool canonicity;
+
+	Section_GV * footer;
 
 	bool indexed;
 	std::map<int64_t, char> section_positions;

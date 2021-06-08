@@ -79,6 +79,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	this->tmp_closed = false;
 	this->header_over = false;
 	this->indexed = false;
+	this->footer = nullptr;
 
 	// Write the signature and the version at the beginning of the file
 	if (this->is_writer) {
@@ -136,11 +137,17 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		this->canonicity = flag != 0;
 		// Read metadata
 		this->read_size_metadata();
+
+		// Discover footer
+		this->footer_discovery();
 	}
 }
 
 
 Kff_file::~Kff_file() {
+	if (this->footer != nullptr)
+		delete this->footer;
+
 	this->close();
 }
 
@@ -173,6 +180,32 @@ void Kff_file::complete_header() {
 	}
 
 	this->header_over = true;
+}
+
+
+void Kff_file::footer_discovery() {
+	// Look at the footer
+	this->fs.seekg(-23, this->fs.end);
+	// Try to extract the footer size
+	stringstream ss;
+	char c = 'o';
+	for (uint i=0 ; i<11 ; i++) {
+		this->fs >> c;
+		ss << c;
+	}
+	if (ss.str().compare("footer_size") != 0) {
+		return;
+	}
+	this->fs >> c; // remove the '\0'
+
+	uint64_t size = 0;
+	read_value(size, this->fs);
+	cout << "GV size " << size << endl;
+	// Jump to value section start
+	this->fs.seekg(-size-3, this->fs.end);
+	cout << this->fs.tellp() << " " << this->fs.peek() << endl;
+	this->footer = new Section_GV(this);
+	this->footer->close();
 }
 
 
@@ -386,6 +419,7 @@ void Section_GV::write_var(const string & var_name, uint64_t value) {
 void Section_GV::read_section() {
 	char type = '\0';
 	this->file->fs >> type;
+	cout << (uint)type << endl;
 	if (type != 'v')
 		throw "The section do not start with the 'v' char, you can't open a Global Variable section.";
 
