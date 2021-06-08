@@ -151,6 +151,9 @@ Kff_file::~Kff_file() {
 	if (this->footer != nullptr)
 		delete this->footer;
 
+	for (Section_Index * si : this->index)
+		delete si;
+
 	this->close();
 }
 
@@ -244,7 +247,23 @@ void Kff_file::index_discovery() {
 
 
 void Kff_file::read_index(long position) {
-	
+	long current_pos = this->fs.tellp();
+
+	while (position != 0) {
+		// Move to the beginning
+		this->fs.seekg(position, this->fs.beg);
+		// read the local index content
+		Section_Index * si = new Section_Index(this);
+		this->index.push_back(si);
+		si->close();
+		// Update index position to the next index section
+		if (si->next_index == 0)
+			position = 0;
+		else
+			position = position + 17 + 9 * si->index.size() + si->next_index;
+	}
+
+	this->fs.seekg(current_pos, this->fs.beg);
 }
 
 

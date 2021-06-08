@@ -12,6 +12,7 @@
 
 #include <fstream>
 #include <unordered_map>
+#include <vector>
 
 #ifndef KFF_IO
 #define KFF_IO
@@ -81,7 +82,7 @@ public:
 	bool canonicity;
 
 	Section_GV * footer;
-	Section_Index * index;
+	std::vector<Section_Index *> index;
 
 	bool indexed;
 	std::map<int64_t, char> section_positions;
