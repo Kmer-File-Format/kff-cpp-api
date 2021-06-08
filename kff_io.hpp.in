@@ -67,6 +67,7 @@ private:
 	void read_size_metadata();
 
 	void write_footer();
+	bool footer_discovery_ended;
 	void footer_discovery();
 
 public:
