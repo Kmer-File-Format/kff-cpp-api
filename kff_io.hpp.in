@@ -66,9 +66,13 @@ private:
 	 */
 	void read_size_metadata();
 
-	void write_footer();
 	bool footer_discovery_ended;
+	bool index_discovery_ended;
+
+	void write_footer();
 	void footer_discovery();
+	void index_discovery();
+	void read_index(long position);
 
 public:
 	uint8_t major_version;
@@ -77,6 +81,7 @@ public:
 	bool canonicity;
 
 	Section_GV * footer;
+	Section_Index * index;
 
 	bool indexed;
 	std::map<int64_t, char> section_positions;

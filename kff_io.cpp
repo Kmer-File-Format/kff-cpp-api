@@ -142,6 +142,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 
 		// Discover footer
 		this->footer_discovery();
+		this->index_discovery();
 	}
 }
 
@@ -214,7 +215,37 @@ void Kff_file::footer_discovery() {
 }
 
 
-// void Kff_file::
+void Kff_file::index_discovery() {
+	long current_pos = this->fs.tellp();
+	bool header_over = this->header_over;
+	this->complete_header();
+
+	// Search in footer
+	if (this->footer != nullptr and this->footer->vars.find("first_index") != this->footer->vars.end()) {
+		this->indexed = true;
+		this->read_index((long)this->footer->vars["first_index"]);
+	}
+
+	// Search first section
+	if (not this->indexed) {
+		char type = this->fs.peek();
+		if (type == 'i') {
+			this->indexed = true;
+			this->read_index(this->fs.tellp());
+		}
+
+	}
+
+	this->header_over = header_over;
+	this->index_discovery_ended = true;
+
+	this->fs.seekg(current_pos, this->fs.beg);
+}
+
+
+void Kff_file::read_index(long position) {
+	
+}
 
 
 void Kff_file::tmp_close() {
@@ -262,13 +293,13 @@ void Kff_file::close() {
 	if (this->tmp_closed)
 		this->reopen();
 
-	// Write the index
-	if (this->indexed)
-		this->write_footer();
-
-	// End signature
-	if (this->is_writer)
+	if (this->is_writer) {
+		// Write the index
+		if (this->indexed)
+			this->write_footer();
+		// End signature
 		this->fs << "KFF";
+	}
 
 	if (this->fs.is_open())
 		this->fs.close();
@@ -516,7 +547,6 @@ void Section_Index::set_next_index(int64_t index) {
 
 void Section_Index::close() {
 	if (this->file->is_writer) {
-		cout << "final size " << this->index.size() << endl;
 		// Section header
 		this->file->fs << (char)'i';
 		write_value((uint64_t)this->index.size(), this->file->fs);
