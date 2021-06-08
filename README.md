@@ -86,6 +86,26 @@ This is the object needed to manipulate a binary kff file.
   infile.close();
 ```
 
+During the opening, the API automatically look at the beginning and end of the file to find potential index chain and footer values.
+Here is an example code to explore both of them:
+```C++
+  if (infile.footer != nullptr)
+    // Explore footer values
+    for (const auto & val_pair : infile.footer.vars)
+      cout << val_pair.first << " : " << val_pair.second << endl;
+
+  // Explore the known index sections
+  if (infile.index.size() > 0)
+    for (Section_Index * section : infile.index) {
+      // Get the index section position in the file
+      cout << "section position in file: " << section->beginning << endl;
+
+      for (const auto & index_pair : section->index)
+        // Get the relative position (from the end of the index section) of the registered section
+        cout << "section " << index_pair.second << " at relative position " << index_pair.first << endl;
+    }
+```
+
 ### Header
 
 When you open a file to read it, the software version is automatically read and compared to the file version.
@@ -132,7 +152,7 @@ All the pairs (relative position, section type) from the section are then access
   // Open the index section
   Section_Index si(&infile);
   // Print the index pair
-  for (auto it : si.index)
+  for (const auto & it : si.index)
     std::cout << "position " << it.first << " -> " << it.second << " section" << std::endl;
 ```
 
@@ -146,10 +166,10 @@ The variables are accessible as a std::map<string, uint64_t> with the public sec
   // Open the section (automatically read the variables)
   Section_GV sgv(&infile);
   // Read the variables from the section map
-  for (auto it : sgv.vars)
+  for (const auto & it : sgv.vars)
     std::cout << it.first << ": " << it.second << std::endl;
   // Read the variables from the global map
-  for (auto it : infile.global_vars)
+  for (const auto & it : infile.global_vars)
     std::cout << it.first << ": " << it.second << std::endl;
 ```
 
