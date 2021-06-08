@@ -78,6 +78,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	this->fs.open(filename, streammode);
 	this->tmp_closed = false;
 	this->header_over = false;
+	this->indexed = false;
 
 	// Write the signature and the version at the beginning of the file
 	if (this->is_writer) {
@@ -150,6 +151,13 @@ void Kff_file::set_indexation(bool indexed) {
 }
 
 
+void Kff_file::register_position(char section_type) {
+	if (this->is_writer and this->indexed) {
+		this->section_positions[this->fs.tellp()] = section_type;
+	}
+}
+
+
 void Kff_file::complete_header() {
 	if (this->header_over)
 		return;
@@ -188,10 +196,34 @@ void Kff_file::reopen() {
 }
 
 
+void Kff_file::write_footer() {
+	Section_Index si(this);
+
+	// Compute end position
+	long position = si.beginning + 17 + 9 * this->section_positions.size();
+	// Add the values
+	for (map<int64_t, char>::iterator it=this->section_positions.begin() ; it!=this->section_positions.end() ; it++) {
+		si.register_section(it->second, it->first - position);
+	}
+
+	si.close();
+
+	// Write a value section to register everything
+	Section_GV sgv(this);
+	sgv.write_var("first_index", si.beginning);
+	sgv.write_var("footer_size", 9 + 2 * (12 + 8));
+	sgv.close();
+}
+
+
 void Kff_file::close() {
 	// Write the end signature
 	if (this->tmp_closed)
 		this->reopen();
+
+	// Write the index
+	if (this->indexed)
+		this->write_footer();
 
 	// End signature
 	if (this->is_writer)
@@ -339,6 +371,8 @@ Section_GV::Section_GV(Kff_file * file) : Section(file) {
 	}
 
 	if (file->is_writer) {
+		if (file->indexed)
+			file->register_position('v');
 		file->fs << 'v';
 	}
 }
@@ -431,8 +465,8 @@ Section_Index::Section_Index(Kff_file * file) : Section(file) {
 	}
 }
 
-void Section_Index::register_section(char section_type, int64_t index) {
-	this->index[index] = section_type;
+void Section_Index::register_section(char section_type, int64_t pos) {
+	this->index[pos] = section_type;
 }
 
 void Section_Index::set_next_index(int64_t index) {
@@ -441,6 +475,7 @@ void Section_Index::set_next_index(int64_t index) {
 
 void Section_Index::close() {
 	if (this->file->is_writer) {
+		cout << "final size " << this->index.size() << endl;
 		// Section header
 		this->file->fs << (char)'i';
 		write_value((uint64_t)this->index.size(), this->file->fs);
@@ -502,6 +537,8 @@ Section_Raw::Section_Raw(Kff_file * file) : Section(file){
 	}
 
 	if (file->is_writer) {
+		if (file->indexed)
+			file->register_position('r');
 		file->fs << 'r';
 		write_value(nb_blocks, file->fs);
 	}
@@ -636,6 +673,9 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) : Section(file) {
 	}
 
 	if (file->is_writer) {
+		if (file->indexed)
+			file->register_position('m');
+
 		fstream & fs = file->fs;
 		fs << 'm';
 		this->write_minimizer(this->minimizer);

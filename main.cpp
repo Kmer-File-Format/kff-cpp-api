@@ -72,23 +72,8 @@ int main(int argc, char * argv[]) {
 
 	sm.close();
 
-	// --- Index writing ---
-
-	Section_Index index(file);
-	long end_pos = index.beginning + 17 + 9 * section_absolute_indexes.size();
-	for (std::map<long, char>::iterator it=section_absolute_indexes.begin() ; it!=section_absolute_indexes.end() ; ++it) {
-		index.register_section((char)it->second, (int64_t)it->first - end_pos);
-	}
-	index.close();
-
-	// --- Footer ---
-
-	sgv = Section_GV(file);
-	sgv.write_var("first_index", index.beginning);
-	sgv.write_var("footer_size", 9 + 2 * (12 + 8));
-	sgv.close();
-
 	// Close and end writing of the file
+	// The index + footer are automatically created on close
 	file->close();
 	delete file;
 

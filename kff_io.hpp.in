@@ -66,6 +66,8 @@ private:
 	 */
 	void read_size_metadata();
 
+	void write_footer();
+
 public:
 	uint8_t major_version;
 	uint8_t minor_version;
@@ -101,6 +103,10 @@ public:
 	 * This function allows the deactivation of the footer index generation.
 	 */
 	void set_indexation(bool indexed);
+	/**
+	 * Register a section into index
+	 */
+	void register_position(char section_type);
 	/**
 	 * Release the file pointer by temporarily close the file stream.
 	 * The usage of this function increase the execution time.
