@@ -86,51 +86,22 @@ int main(int argc, char * argv[]) {
 	metadata[file->metadata_size] = '\0';
 	delete[] metadata;
 
-	// --- index discovering (Will be simplified in futur versions) ---
-	long current_pos = file->fs.tellp();
-
-	// Look at the footer
-	file->fs.seekg(-23, file->fs.end);
-	// Try to extract the footer size
-	stringstream ss;
-	char c = 'o';
-	for (uint i=0 ; i<11 ; i++) {
-		file->fs >> c;
-		ss << c;
-	}
-	if (ss.str().compare("footer_size") != 0) {
-		cout << ss.str() << endl;
-		cerr << "No footer !" << endl;
+	// --- index discovery has been done during header reading ---
+	if (file->footer == nullptr) {
+		cerr << "No footer when one expected!" << endl;
 		exit(1);
 	}
-	file->fs >> c; // remove the '\0'
+	cout << "Footer discoverd" << endl;
 
-	uint64_t size = 0;
-	for (uint i=0 ; i<8 ; i++) {
-		uint8_t val;
-		file->fs >> val;
-		size = (size << 8) | val;
-	}
-	// Jump to value section start
-	file->fs.seekg(-size-3, file->fs.end);
-	Section_GV footer(file);
-	uint64_t i_pos = file->global_vars["first_index"];
-	footer.close();
+	// --- index has been discovered during file opening ---
+	cout << "First index at position " << file->footer->vars["first_index"] << endl;
+	for (Section_Index * si : file->index) {
+		cout << "Index section " << si->beginning << endl;
 
-	// --- index reading ---
-	cout << "First index at position " << i_pos << endl;
-	// Jump to the index position
-	file->fs.seekg(i_pos, file->fs.beg);
-	// Read the index
-	Section_Index si(file);
-	for (std::map<int64_t, char>::iterator it=si.index.begin() ; it!=si.index.end() ; ++it) {
-		cout << "section " << (char)it->second << " at relative position " << (int)it->first << endl;
+		for (map<int64_t, char>::iterator it=si->index.begin() ; it!=si->index.end() ; it++)
+			cout << "- section " << it->second << " at relative position " << it->first << endl;
 	}
-	si.close();
 	cout << endl;
-
-	file->fs.seekp(current_pos);
-
 
 	// --- Global variable read ---
 	char section_name = file->read_section_type();
