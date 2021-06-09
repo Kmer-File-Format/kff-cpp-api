@@ -257,7 +257,12 @@ void Kff_file::read_index(long position) {
 		this->index.push_back(si);
 		si->close();
 		// Update index position to the next index section
-		position = si->next_index;
+		if (si->next_index == 0)
+			position = 0;
+		else {
+
+			position = this->fs.tellp() + si->next_index;
+		}
 	}
 
 	this->fs.seekg(current_pos, this->fs.beg);
