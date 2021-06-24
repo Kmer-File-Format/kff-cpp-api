@@ -204,10 +204,8 @@ public:
 
 
 class Section {
-	protected:
-		Kff_file * file;
-
 	public:
+		Kff_file * file;
 		long beginning;
 
 		Section(Kff_file * file);
