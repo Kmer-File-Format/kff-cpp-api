@@ -76,6 +76,13 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	// Open the file
 	this->filename = filename;
 	this->fs.open(filename, streammode);
+
+    if (!this->fs.good())
+    {
+        cerr << "Unable to open file: " << filename << endl;
+        throw "Error opening input file";
+    }
+
 	this->tmp_closed = false;
 	this->header_over = false;
 	this->indexed = false;
