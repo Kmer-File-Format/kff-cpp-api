@@ -26,3 +26,5 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 add_executable(kff_example main.cpp ${SRCS} ${HEADERS})
 
 add_library(kff ${SRCS} ${HEADERS})
+
+target_include_directories(kff PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
