@@ -21,6 +21,6 @@ set(HEADERS
   )
 
 # add the executable
-add_executable(kff_example main.cpp ${SRCS} ${HEADERS})
+add_executable(kff_example main.cpp ${SRCS})
 
-add_library(kff ${SRCS} ${HEADERS})
+add_library(kff ${SRCS})
