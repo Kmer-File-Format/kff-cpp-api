@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 # set(CMAKE_BUILD_TYPE Debug)
 
+include_directories(${CMAKE_BINARY_DIR})
+
 set(CMAKE_CXX_FLAGS "-Wall")
 
 set(SRCS
@@ -23,8 +25,7 @@ set(HEADERS
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # add the executable
-add_executable(kff_example main.cpp ${SRCS} ${HEADERS})
+add_executable(kff_example main.cpp ${SRCS})
 
-add_library(kff ${SRCS} ${HEADERS})
-
+add_library(kff ${SRCS})
 target_include_directories(kff PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
