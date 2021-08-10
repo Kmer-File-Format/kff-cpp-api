@@ -12,9 +12,15 @@
 
 #include <fstream>
 #include <unordered_map>
+#include <vector>
 
 #ifndef KFF_IO
 #define KFF_IO
+
+#ifdef _WIN32
+#include <iso646.h>
+using uint = unsigned long;
+#endif
 
 // the configured options and settings for Tutorial
 #define KFF_VERSION_MAJOR @KFF_VERSION_MAJOR@
@@ -23,7 +29,7 @@
 class Section_GV;
 class Section_Raw;
 class Section_Minimizer;
-
+class Section_Index;
 class Kff_reader;
 
 /**
@@ -37,14 +43,16 @@ class Kff_file {
 private:
 	bool is_writer;
 	bool is_reader;
+	bool tmp_closed;
+	std::string filename;
+	long end_position;
 
 	// True when the header have been read/write and the fs pointer is after.
 	bool header_over;
 
-	uint8_t major_version;
-	uint8_t minor_version;
-
+	friend class Section;
 	friend class Section_GV;
+	friend class Section_Index;
 	friend class Section_Raw;
 	friend class Section_Minimizer;
 	friend class Kff_reader;
@@ -59,13 +67,29 @@ private:
 	 */
 	void read_size_metadata();
 
+	bool footer_discovery_ended;
+	bool index_discovery_ended;
+
+	void write_footer();
+	void footer_discovery();
+	void index_discovery();
+	void read_index(long position);
+
 public:
+	uint8_t major_version;
+	uint8_t minor_version;
+	bool uniqueness;
+	bool canonicity;
+
+	Section_GV * footer;
+	std::vector<Section_Index *> index;
+
+	bool indexed;
+	std::map<int64_t, char> section_positions;
+
 	std::fstream fs;
 	// encoding:        A:0  C:1 G:3 T:2
 	uint8_t encoding[4] = {0, 1, 3, 2};
-	uint64_t k_value = 0;
-	uint64_t data_size = 0;
-	uint64_t max_kmers = 255;
 	
 	uint32_t metadata_size = 0;
 
@@ -84,6 +108,26 @@ public:
 	 * Destroy properly a Kff object, closing the file behind it.
 	 */
 	~Kff_file();
+	/**
+	 * In writing mode, the KFF files are indexed by default.
+	 * This function allows the deactivation of the footer index generation.
+	 */
+	void set_indexation(bool indexed);
+	/**
+	 * Register a section into index
+	 */
+	void register_position(char section_type);
+	/**
+	 * Release the file pointer by temporarily close the file stream.
+	 * The usage of this function increase the execution time.
+	 * It should be use only when the user need a large amount of simulataneous kff files.
+	 */
+	void tmp_close();
+	/**
+	 * Reopen the file and point to the end of it.
+	 * This function is automatically called on write events if the file has been temporarily closed.
+	 */
+	void reopen();
 	/** 
 	 * Close the file
 	 *
@@ -107,10 +151,16 @@ public:
 	 * Set the encoding used to compact the nucleotides into 2-bits values.
 	 * Only the two lower bits of each uint8_t will be used.
 	 * The 4 2-bits values must be diferent to each other.
-	 *
-	 * @param encoding An array that must contains the 4 encoding values in order A, C, G and T.
-	 */
+	**/
 	void write_encoding(uint8_t * encoding);
+	/** Set the uniqueness of the kmers in the file.
+	  * true means that no kmer will be present 2 times in the file.
+	  **/
+	void set_uniqueness(bool uniqueness);
+	/** Set the cononicity of the kmers in the file.
+	  * true means that if a kmer is present in the file, its reverse complement is absent.
+	  **/
+	void set_canonicity(bool canonicity);
 	/**
 	 * Write the metadata entered by the user.
 	 * Also write all the needed values like metadata section size into the file.
@@ -153,30 +203,36 @@ public:
 };
 
 
+class Section {
+	public:
+		Kff_file * file;
+		long beginning;
+
+		Section(Kff_file * file);
+		virtual ~Section() {};
+		void close();
+};
+
 /**
  * File manipulator for Global Variable sections.
  *
  */
-class Section_GV {
+class Section_GV : public Section {
 private:
-	Kff_file * file;
-	long begining;
-	uint64_t nb_vars;
-	bool is_closed;
-
 	void read_section();
 	void read_var();
 
-	friend class Kff_file;
+	// friend class Kff_file;
 
 public:
-	Section_GV(Kff_file * file);
+	uint64_t nb_vars;
 	/**
 	 * A map containing all the declared variables for this section.
 	 * If the file is opened in r mode, all the variables of this section have been loaded during the object construction.
 	 */
-	std::unordered_map<std::string, uint64_t> vars;
-	
+	std::map<std::string, uint64_t> vars;
+
+	Section_GV(Kff_file * file);
 	/**
 	 * Write a variable into the file.
 	 *
@@ -208,8 +264,8 @@ public:
 	 * mode r: filled during the construction of the object.
 	 * mode w: Increased each time a block is added. Used on close to write the number at the beginning of the section.
 	 */
-	uint32_t nb_blocks;
-	uint32_t remaining_blocks;
+	uint64_t nb_blocks;
+	uint64_t remaining_blocks;
 
 	virtual ~Block_section_reader(){};
 
@@ -243,12 +299,28 @@ public:
  * File manipulator for Raw sections.
  *
  */
-class Section_Raw: public Block_section_reader {
+class Section_Index : public Section {
 private:
-	Kff_file * file;
-	long begining;
-	bool is_closed;
 
+	friend class Kff_file;
+
+public:
+	std::map<int64_t, char> index;
+	int64_t next_index;
+
+	Section_Index(Kff_file * file);
+	~Section_Index(){};
+	void register_section(char section_type, int64_t index);
+	void set_next_index(int64_t index);
+	void close();
+};
+
+/**
+ * File manipulator for Raw sections.
+ *
+ */
+class Section_Raw: public Section, public Block_section_reader {
+private:
 	friend class Kff_file;
 	friend class Block_section_reader;
 
@@ -296,15 +368,10 @@ public:
  * File manipulator for Minimizer sections.
  *
  */
-class Section_Minimizer: public Block_section_reader {
+class Section_Minimizer : public Section, public Block_section_reader {
 private:
 	Section_Minimizer(Section_Minimizer & sm) = delete;
 	Section_Minimizer() = delete;
-
-	
-	Kff_file * file;
-	long begining;
-	bool is_closed;
 
 	friend class Kff_file;
 	friend class Block_section_reader;
@@ -401,7 +468,6 @@ public:
 
 class Kff_reader {
 private:
-	Kff_file * file;
 	// Space alocated for copying the current kmer given to the user.
 	uint8_t * current_kmer;
 	// Current sequence
@@ -427,21 +493,17 @@ private:
 	void read_next_block();
 
 public:
+	Kff_file * file;
 	
 	Kff_reader(std::string filename);
 	~Kff_reader();
 
 	bool has_next();
-	uint64_t next_block(uint8_t ** sequence, uint8_t ** data);
-	void next_kmer(uint8_t ** sequence, uint8_t ** data);
+	uint64_t next_block(uint8_t* & sequence, uint8_t* & data);
+	void next_kmer(uint8_t* & sequence, uint8_t* & data);
 
 	uint64_t get_var(std::string name);
 	uint8_t * get_encoding();
 };
-
-
-
-void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift);
-void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift);
 
 #endif
