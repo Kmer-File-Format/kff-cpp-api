@@ -1120,7 +1120,6 @@ Kff_reader::~Kff_reader() {
 }
 
 void Kff_reader::read_until_first_section_block() {
-
 	while (current_section == NULL or remaining_blocks == 0) {
 		if (this->file->fs.tellp() == this->file->end_position) {
 			break;
@@ -1191,8 +1190,10 @@ void Kff_reader::read_next_block() {
 }
 
 bool Kff_reader::has_next() {
+	// cout << "next " << endl;
 	if (current_section == NULL and (file->end_position > file->fs.tellp()))
 		read_until_first_section_block();
+	// cout << "/next " << endl;
 	return file->end_position > file->fs.tellp();
 }
 
@@ -1220,12 +1221,12 @@ uint64_t Kff_reader::next_block(uint8_t* & sequence, uint8_t* & data) {
 	return nb_kmers;
 }
 
-void Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
+bool Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
 	// Verify the abylity to find another kmer in the file.
 	if (!this->has_next()){
 		kmer = NULL;
 		data = NULL;
-		return;
+		return false;
 	}
 
 	// Load the next block
@@ -1255,6 +1256,8 @@ void Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
 			current_section = NULL;
 		}
 	}
+
+	return true;
 }
 
 

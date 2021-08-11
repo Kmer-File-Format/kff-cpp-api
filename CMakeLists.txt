@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 include_directories(${CMAKE_BINARY_DIR})
 
-set(CMAKE_CXX_FLAGS "-Wall")
+set(CMAKE_CXX_FLAGS "-Wall -Ofast")
 
 set(SRCS
   kff_io.cpp
