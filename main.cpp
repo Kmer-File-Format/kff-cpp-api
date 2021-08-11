@@ -118,7 +118,9 @@ int main(int argc, char * argv[]) {
 	sr = Section_Raw(file);
 	cout << "nb blocks: " << sr.nb_blocks << endl;
 	uint8_t * seq = new uint8_t[(max + k) / 8 + 1];
+	memset(seq, 0, (max + k) / 8 + 1);
 	uint8_t * data = new uint8_t[max * data_size];
+	memset(data, 0, max * data_size);
 	for (uint64_t i=0 ; i<sr.nb_blocks ; i++) {
 		cout << "bloc " << (i+1) << ": ";
 		uint32_t nb_kmers = sr.read_compacted_sequence(seq, data);
@@ -214,7 +216,7 @@ uint8_t uint8_packing(std::string sequence) {
 void uint8_unpacking(uint8_t packed, char * decoded, size_t size);
 string decode_sequence(uint8_t * encoded, size_t size) {
 	stringstream ss;
-	char tmp_chars[4];
+	char tmp_chars[4] = {0, 0, 0, 0};
 
 	// Decode the truncated first compacted 8 bits
 	size_t remnant = size % 4;

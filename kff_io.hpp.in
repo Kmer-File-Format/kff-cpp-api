@@ -41,21 +41,11 @@ class Kff_reader;
  */
 class Kff_file {
 private:
-	bool is_writer;
-	bool is_reader;
 	bool tmp_closed;
 	std::string filename;
-	long end_position;
+	std::fstream fs;
+	long current_position;
 
-	// True when the header have been read/write and the fs pointer is after.
-	bool header_over;
-
-	friend class Section;
-	friend class Section_GV;
-	friend class Section_Index;
-	friend class Section_Raw;
-	friend class Section_Minimizer;
-	friend class Kff_reader;
 
 	/**
 	 * Read encoding from file and save it to the public argument "encoding".
@@ -67,8 +57,6 @@ private:
 	 */
 	void read_size_metadata();
 
-	bool footer_discovery_ended;
-	bool index_discovery_ended;
 
 	void write_footer();
 	void footer_discovery();
@@ -80,6 +68,16 @@ public:
 	uint8_t minor_version;
 	bool uniqueness;
 	bool canonicity;
+	
+	// True when the header have been read/write and the fs pointer is after.
+	bool header_over;
+	bool footer_discovery_ended;
+	bool index_discovery_ended;
+
+	long end_position;
+	
+	bool is_writer;
+	bool is_reader;
 
 	Section_GV * footer;
 	std::vector<Section_Index *> index;
@@ -87,7 +85,6 @@ public:
 	bool indexed;
 	std::map<int64_t, char> section_positions;
 
-	std::fstream fs;
 	// encoding:        A:0  C:1 G:3 T:2
 	uint8_t encoding[4] = {0, 1, 3, 2};
 	
@@ -95,7 +92,7 @@ public:
 
 	std::unordered_map<std::string, uint64_t> global_vars;
 
-	// --- General functions ---
+	// --- Filesystem functions ---
 	/** Open the file filename with the mode mode.
 	 * mode must be choose in the set of values {r: read, w: write}
 	 *
@@ -108,19 +105,40 @@ public:
 	 * Destroy properly a Kff object, closing the file behind it.
 	 */
 	~Kff_file();
+
+	/** Read a slice of the file and copy it into bytes
+	 * @param bytes Bytes array already allocated by the user (minimum size bytes)
+	 * @param Size in bytes to copy
+	 * 
+	 * @return true if everything is ok.
+	 */
+	bool read(uint8_t * bytes, size_t size);
+	/** Write size bytes into the file.
+	 * @param bytes Bytes to write
+	 * @param Size in bytes to copy
+	 * 
+	 * @return true if everything is ok.
+	 */
+	bool write(const uint8_t * bytes, size_t size);
+	/** Write size bytes at position and resume and return at the same position than initially.
+	 * @param bytes Bytes to write.
+	 * @param size Number of bytes to write
+	 * @param position Where to write in the file (will overwrite the previous data)
+	 * 
+	 * @return true if everything is ok
+	 */
+	bool write_at(const uint8_t * bytes, size_t size, long position);
+	/** Give the current position in the file
+	 * 
+	 * @return position from the beginning of the file.
+	 */
+	long tellp();
+	/** Jump size bytes */
+	void jump(long size);
+
 	/**
 	 * In writing mode, the KFF files are indexed by default.
 	 * This function allows the deactivation of the footer index generation.
-	 */
-	void set_indexation(bool indexed);
-	/**
-	 * Register a section into index
-	 */
-	void register_position(char section_type);
-	/**
-	 * Release the file pointer by temporarily close the file stream.
-	 * The usage of this function increase the execution time.
-	 * It should be use only when the user need a large amount of simulataneous kff files.
 	 */
 	void tmp_close();
 	/**
@@ -134,6 +152,20 @@ public:
 	 * Physically close the file and save buffered parts to the disk if w.
 	 */
 	void close();
+	
+
+	// --- Index related ---
+
+	void set_indexation(bool indexed);
+	/**
+	 * Register a section into index
+	 */
+	void register_position(char section_type);
+	/**
+	 * Release the file pointer by temporarily close the file stream.
+	 * The usage of this function increase the execution time.
+	 * It should be use only when the user need a large amount of simulataneous kff files.
+	 */
 
 	// --- header functions ---
 	/**
