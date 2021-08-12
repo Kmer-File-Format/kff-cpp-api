@@ -133,8 +133,14 @@ public:
 	 * @return position from the beginning of the file.
 	 */
 	long tellp();
-	/** Jump size bytes */
+	/** Jump size bytes. Can be negative.
+	 * @param size Number of bytes to jump
+	 **/
 	void jump(long size);
+	/** Jump to a specific position in the file.
+	 * @param position Position to reach in the file.
+	 */
+	void jump_to(unsigned long position);
 
 	/**
 	 * In writing mode, the KFF files are indexed by default.

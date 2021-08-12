@@ -90,6 +90,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	this->footer = nullptr;
 	this->footer_discovery_ended = true;
 
+
 	// Write the signature and the version at the beginning of the file
 	if (this->is_writer) {
 		// Signature
@@ -106,7 +107,6 @@ Kff_file::Kff_file(const string filename, const string mode) {
 
 		this->end_position = 0;
 	}
-
 	// Read the header
 	else if (this->is_reader) {
 		// Header integrity marker
@@ -149,6 +149,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 		this->canonicity = flag != 0;
 		// Read metadata
 		this->read_size_metadata();
+		this->current_position = this->fs.tellp();
 
 		// Discover footer
 		this->footer_discovery();
@@ -188,7 +189,8 @@ void Kff_file::complete_header() {
 
 	// If the metadata has not been read, jump over
 	if (this->is_reader) {
-		this->fs.seekp((long)this->fs.tellp() + (long)this->metadata_size);
+		this->jump(this->metadata_size);
+		// this->fs.seekp((long)this->fs.tellp() + (long)this->metadata_size);
 	}
 
 	// If metadata has not been write, write a 0 byte one.
@@ -196,16 +198,17 @@ void Kff_file::complete_header() {
 		this->write_metadata(0, nullptr);
 	}
 
-	this->current_position = this->fs.tellp();
+	// this->current_position = this->fs.tellp();
 	this->header_over = true;
 }
 
 
 void Kff_file::footer_discovery() {
-	long current_pos = this->fs.tellp();
+	long current_pos = this->tellp();
 
 	// Look at the footer
 	this->fs.seekg(-23, this->fs.end);
+	this->current_position = this->fs.tellp();
 	// Try to extract the footer size
 	stringstream ss;
 	char c = 'o';
@@ -224,16 +227,18 @@ void Kff_file::footer_discovery() {
 	load_big_endian(buff, 8, size);
 	// Jump to value section start
 	this->fs.seekg(-size-3, this->fs.end);
+	this->current_position = this->fs.tellp();
+
 	this->footer = new Section_GV(this);
 	this->footer->close();
 	this->footer_discovery_ended = true;
 
-	this->fs.seekg(current_pos, this->fs.beg);
+	this->jump_to(current_pos);
 }
 
 
 void Kff_file::index_discovery() {
-	long current_pos = this->fs.tellp();
+	long current_pos = this->tellp();
 	bool header_over = this->header_over;
 	this->complete_header();
 
@@ -256,16 +261,16 @@ void Kff_file::index_discovery() {
 	this->header_over = header_over;
 	this->index_discovery_ended = true;
 
-	this->fs.seekg(current_pos, this->fs.beg);
+	this->jump_to(current_pos);
 }
 
 
 void Kff_file::read_index(long position) {
-	long current_pos = this->fs.tellp();
+	long init_pos = this->tellp();
 
 	while (position != 0) {
 		// Move to the beginning
-		this->fs.seekg(position, this->fs.beg);
+		this->jump_to(position);
 		// read the local index content
 		Section_Index * si = new Section_Index(this);
 		this->index.push_back(si);
@@ -274,17 +279,16 @@ void Kff_file::read_index(long position) {
 		if (si->next_index == 0)
 			position = 0;
 		else {
-
-			position = this->fs.tellp() + si->next_index;
+			position = this->tellp() + si->next_index;
 		}
 	}
 
-	this->fs.seekg(current_pos, this->fs.beg);
+	this->jump_to(init_pos);
 }
 
 
 bool Kff_file::read(uint8_t * bytes, size_t size) {
-	if (this->end_position - this->tellp() < (long)size)
+	if (this->end_position - this->tellp() + 3 < (long)size)
 		return false;
 	this->fs.read((char *)bytes, size);
 	this->current_position += size;
@@ -313,16 +317,20 @@ bool Kff_file::write_at(const uint8_t * bytes, size_t size, long position) {
 }
 
 long Kff_file::tellp() {
-	if (this->header_over)
-		return this->current_position;
-	else
-		return this->fs.tellp();
+	if (not this->header_over) {
+		this->current_position = this->fs.tellp();
+	}
+	return this->current_position;
 }
 
 
 void Kff_file::jump(long size) {
 	this->fs.seekp(this->tellp() + size);
 	this->current_position += size;
+}
+
+void Kff_file::jump_to(unsigned long position) {
+	this->jump(static_cast<long>(position) - this->tellp());
 }
 
 
@@ -462,7 +470,7 @@ void Kff_file::read_size_metadata() {
 }
 
 void Kff_file::read_metadata(uint8_t * data) {
-	this->fs.read((char *)data, this->metadata_size);
+	this->read(data, this->metadata_size);
 	this->header_over = true;
 }
 
