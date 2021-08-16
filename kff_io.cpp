@@ -1310,12 +1310,12 @@ bool Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
 
 	uint64_t start_nucl = prefix_offset + right_shift + kmer_idx;
 	uint64_t start_byte = start_nucl / 4;
-	uint64_t end_nucl = start_nucl + file->global_vars["k"] - 1;
+	uint64_t end_nucl = start_nucl + this->k - 1;
 	uint64_t end_byte = end_nucl / 4;
 
 	memcpy(current_kmer, current_shifts[right_shift]+start_byte, end_byte-start_byte+1);
 	kmer = current_kmer;
-	data = current_data + (current_seq_kmers - remaining_kmers) * this->file->global_vars["data_size"];
+	data = current_data + (current_seq_kmers - remaining_kmers) * this->data_size;
 	
 	// Read the next block if needed.
 	remaining_kmers -= 1;
