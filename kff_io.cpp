@@ -1251,7 +1251,7 @@ void Kff_reader::read_next_block() {
 	current_seq_bytes = bytes_from_bit_array(2, current_seq_nucleotides);
 
 	// Create the 4 possible shifts of the sequence for easy use.
-	for (uint8_t i=1 ; i<4 ; i++) {
+	for (uint8_t i=1 ; i<min((uint64_t)4, remaining_kmers) ; i++) {
 		// Copy
 		memcpy(current_shifts[i], current_sequence, current_seq_bytes);
 		// Shift
