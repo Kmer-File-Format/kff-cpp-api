@@ -1204,6 +1204,7 @@ void Kff_reader::read_until_first_section_block() {
 				or gvs.vars.find("max") != gvs.vars.end()) {
 				// Compute the max size of a sequence
 				auto k = this->file->global_vars["k"];
+				this->k = k;
 				auto max = this->file->global_vars["max"];
 				uint64_t max_size = bytes_from_bit_array(2, max + k - 1);
 				// Allocate the right amount of memory and place the pointers to the right addresses
@@ -1223,6 +1224,7 @@ void Kff_reader::read_until_first_section_block() {
 				or gvs.vars.find("max") != gvs.vars.end()) {
 				// Compute the max size of a data array
 				auto data_size = this->file->global_vars["data_size"];
+				this->data_size = data_size;
 				auto max = this->file->global_vars["max"];
 				uint64_t max_size = data_size * max;
 				delete[] this->current_data;
