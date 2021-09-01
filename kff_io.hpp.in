@@ -41,11 +41,19 @@ class Kff_reader;
  */
 class Kff_file {
 private:
-	bool tmp_closed;
 	std::string filename;
 	std::fstream fs;
-	long current_position;
+	unsigned long current_position;
 
+	bool writing_started;
+	uint8_t * file_buffer;
+	unsigned long file_size;
+	unsigned long buffer_size;
+	unsigned long max_buffer_size;
+	unsigned long next_free;
+	bool delete_on_destruction;
+
+	bool tmp_closed;	
 
 	/**
 	 * Read encoding from file and save it to the public argument "encoding".
@@ -56,7 +64,6 @@ private:
 	 * Read the metadata size from the file and save the value in metadate_size.
 	 */
 	void read_size_metadata();
-
 
 	void write_footer();
 	void footer_discovery();
@@ -74,7 +81,7 @@ public:
 	bool footer_discovery_ended;
 	bool index_discovery_ended;
 
-	long end_position;
+	unsigned long end_position;
 	
 	bool is_writer;
 	bool is_reader;
@@ -101,10 +108,23 @@ public:
    *
 	 */
 	Kff_file(const std::string filename, const std::string mode);
+	/** Reopen from the beginning the KFF file defined at the construction.
+	 * The opening mode can differ from the original one.
+	 * 
+	 * @param mode r for reading, w for writing (overwrite any previous file).
+	 */
+	void open(const std::string mode);
 	/**
 	 * Destroy properly a Kff object, closing the file behind it.
 	 */
 	~Kff_file();
+	/**
+	 * Close the file.
+	 * 
+	 * @param write_buffer Write the buffer in writing mode. If set to false, the buffer is never
+	 * saved on disk and the file will be deleted on object destruction.
+	 */
+	void close(bool write_buffer=true);
 
 	/** Read a slice of the file and copy it into bytes
 	 * @param bytes Bytes array already allocated by the user (minimum size bytes)
@@ -112,35 +132,33 @@ public:
 	 * 
 	 * @return true if everything is ok.
 	 */
-	bool read(uint8_t * bytes, size_t size);
-	/** Write size bytes into the file.
+	void read(uint8_t * bytes, size_t size);
+	/** Writes size bytes into the file buffer. Written on disk if size > 1MB or on file closing.
 	 * @param bytes Bytes to write
 	 * @param Size in bytes to copy
-	 * 
-	 * @return true if everything is ok.
 	 */
-	bool write(const uint8_t * bytes, size_t size);
-	/** Write size bytes at position and resume and return at the same position than initially.
+	void write(const uint8_t * bytes, size_t size);
+	/** Writes size bytes at position and returns at the same position than initially.
 	 * @param bytes Bytes to write.
 	 * @param size Number of bytes to write
 	 * @param position Where to write in the file (will overwrite the previous data)
-	 * 
-	 * @return true if everything is ok
 	 */
-	bool write_at(const uint8_t * bytes, size_t size, long position);
+	void write_at(const uint8_t * bytes, size_t size, unsigned long position);
 	/** Give the current position in the file
 	 * 
 	 * @return position from the beginning of the file.
 	 */
-	long tellp();
-	/** Jump size bytes. Can be negative.
+	unsigned long tellp();
+	/** Relative jump. Can be negative.
 	 * @param size Number of bytes to jump
 	 **/
 	void jump(long size);
 	/** Jump to a specific position in the file.
+	 * 
 	 * @param position Position to reach in the file.
+	 * @param from_end If true, position from the end of the file.
 	 */
-	void jump_to(unsigned long position);
+	void jump_to(unsigned long position, bool from_end=false);
 
 	/**
 	 * In writing mode, the KFF files are indexed by default.
@@ -152,12 +170,6 @@ public:
 	 * This function is automatically called on write events if the file has been temporarily closed.
 	 */
 	void reopen();
-	/** 
-	 * Close the file
-	 *
-	 * Physically close the file and save buffered parts to the disk if w.
-	 */
-	void close();
 	
 
 	// --- Index related ---
@@ -242,9 +254,14 @@ public:
 
 
 class Section {
+	protected:
+		uint8_t * buffer;
 	public:
 		Kff_file * file;
 		long beginning;
+
+		bool active_buffer;
+		long max_buffer_size;
 
 		Section(Kff_file * file);
 		virtual ~Section() {};

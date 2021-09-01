@@ -20,12 +20,6 @@ void store_big_endian(uint8_t * buff, size_t size, const T& data) {
 		*buff++ = data >> (8 * b);
 	}
 }
-// template<typename T>
-// void write_value(T val, fstream & fs) {
-// 	uint8_t tmp[sizeof(T)];
-// 	store_big_endian(tmp, val);
-// 	fs.write((char *)tmp, sizeof(val));
-// }
 
 template<typename T>
 void load_big_endian(uint8_t * buff, size_t size, T& data) {
@@ -35,12 +29,6 @@ void load_big_endian(uint8_t * buff, size_t size, T& data) {
 		data |= buff[b];
 	}
 }
-// template<typename T>
-// void read_value(T & val, fstream & fs) {
-// 	uint8_t tmp[sizeof(T)];
-// 	fs.read((char *)tmp, sizeof(val));
-// 	load_big_endian(tmp, val);
-// }
 
 uint64_t bytes_from_bit_array(uint64_t bits_per_elem, uint64_t nb_elem) {
 	if (bits_per_elem == 0 or nb_elem == 0)
@@ -58,115 +46,178 @@ static uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index
 
 Kff_file::Kff_file(const string filename, const string mode) {
 	// Variable init
+	this->filename = filename;
+	
 	this->is_writer = false;
 	this->is_reader = false;
-	std::ios_base::openmode streammode = fstream::binary;
+	
+	this->writing_started = false;
+	this->next_free = 0;
+	this->buffer_size = 1 << 10; // 1 KB
+	this->max_buffer_size = 1 << 20; // 1 MB
+	this->file_buffer = new uint8_t[this->buffer_size];
+	this->file_size = 0;
+
+	this->open(mode);
+}
+
+void Kff_file::open(string mode) {
+	this->writing_started = false;
+	this->current_position = 0;
 
 	// Determine the mode and open the file
 	if (mode[0] == 'w') {
 		this->is_writer = true;
-		streammode |= fstream::out;
+		this->file_size = 0;
+		this->next_free = 0;
 	} else if (mode[0] == 'r') {
 		this->is_reader = true;
-		streammode |= fstream::in;		
+		// If no info on the file
+		if (this->file_size == 0 and this->next_free == 0) {
+			// Open the fp
+			this->fs.open(this->filename, fstream::binary | fstream::in);
+			// Compute the file length
+			long position = this->fs.tellp();
+			this->fs.seekg(0, this->fs.end);
+			this->file_size = this->fs.tellp() - position;
+			// Go back to the beginning
+			this->fs.seekg(0, this->fs.beg);
+		}
 	} else {
 		cerr << "Unsupported mode " << mode << endl;
-		exit(0);
+		exit(1);
 	}
-
-	// Open the file
-	this->filename = filename;
-	this->fs.open(filename, streammode);
-
-    if (!this->fs.good())
-    {
-        cerr << "Unable to open file: " << filename << endl;
-        throw "Error opening input file";
-    }
 
 	this->tmp_closed = false;
 	this->header_over = false;
 	this->indexed = false;
 	this->footer = nullptr;
 	this->footer_discovery_ended = true;
-
+	this->delete_on_destruction = false;
 
 	// Write the signature and the version at the beginning of the file
 	if (this->is_writer) {
+		uint8_t default_encoding = 0b00011110;
 		// Signature
-		this->fs << "KFF";
-		// KFF version
-		this->fs << (char)KFF_VERSION_MAJOR << (char)KFF_VERSION_MINOR;
-		// Write default encoding
-		this->fs << (char)0b00011110;
-		// kmer fundamental properties (default all to false)
-		//         Uniqueness Canonicity
-		this->fs << (char)0 << (char)0;
+		uint8_t buff[] = {	'K', 'F', 'F',
+							KFF_VERSION_MAJOR, KFF_VERSION_MINOR,
+							default_encoding,
+							0 /*uniqueness*/, 0 /*canonicity*/
+						};
+
+		this->write(buff, 8);
 
 		this->indexed = true;
-
 		this->end_position = 0;
 	}
 	// Read the header
 	else if (this->is_reader) {
 		// Header integrity marker
-		char a,b,c;
-		this->fs >> a >> b >> c;
-		if (a != 'K' or b != 'F' or c != 'F') {
+		uint8_t buff[4];
+		this->read(buff, 3);
+		if (buff[0] != 'K' or buff[1] != 'F' or buff[2] != 'F') {
 			cerr << "Absent KFF signature at the beginning of the file." << endl;
 			cerr << "Please check that the file is not corrupted" << endl;
 			throw "Absent signature at the beginning";
 		}
 
+		// Version reading
+		this->read(&this->major_version, 1);
+		this->read(&this->minor_version, 1);
+		if (KFF_VERSION_MAJOR < this->major_version or (KFF_VERSION_MAJOR == this->major_version and KFF_VERSION_MINOR < this->minor_version)) {
+			cerr << "The software version " << (uint)KFF_VERSION_MAJOR << "." << (uint)KFF_VERSION_MINOR << " can't read files writen in version " << (uint)this->major_version << "." << (uint)this->minor_version << endl;
+			throw "Unexpected version number";
+		}
+		// Encoding load
+		this->read_encoding();
+		// Read global flags
+		uint8_t flag;
+		this->read(&flag, 1);
+		this->uniqueness = flag != 0;
+
+		this->read(&flag, 1);
+		this->canonicity = flag != 0;
+		// Read metadata size
+		this->read(buff, 4);
+		load_big_endian(buff, 4, this->metadata_size);
+
+
 		// Footer integrity marker
-		this->fs.seekg(-3, this->fs.end);
-		this->end_position = this->fs.tellp();
-		this->fs >> a >> b >> c;
-		if (a != 'K' or b != 'F' or c != 'F') {
+		unsigned long saved_position = this->tellp();
+		this->jump_to(3, true);
+		this->end_position = this->tellp();
+		this->read(buff, 3);
+		this->jump_to(saved_position);
+		if (buff[0] != 'K' or buff[1] != 'F' or buff[2] != 'F') {
 			cerr << "Absent KFF signature at the end of the file." << endl;
 			cerr << "Please check that the file is not corrupted" << endl;
 			throw "Absent signature at the end";
 		}
 
 		// Back to the start
-		this->fs.seekg(3, this->fs.beg);
 		this->footer_discovery_ended = false;
-
-		// Version reading
-		this->fs >> this->major_version >> this->minor_version;
-		if (KFF_VERSION_MAJOR < this->major_version or (KFF_VERSION_MAJOR == this->major_version and KFF_VERSION_MINOR < this->minor_version)) {
-			cerr << "The software version " << (uint)KFF_VERSION_MAJOR << "." << (uint)KFF_VERSION_MINOR << " can't read files writen in version " << (uint)this->major_version << "." << (uint)this->minor_version << endl;
-			throw "Unexpected version number";
-		}
-
-		// Encoding load
-		this->read_encoding();
-		// Read global flags
-		char flag;
-		this->fs >> flag;
-		this->uniqueness = flag != 0;
-		this->fs >> flag;
-		this->canonicity = flag != 0;
-		// Read metadata
-		this->read_size_metadata();
-		this->current_position = this->fs.tellp();
-
 		// Discover footer
 		this->footer_discovery();
 		this->index_discovery();
+
 	}
-	this->current_position = this->fs.tellp();
+}
+
+void Kff_file::close(bool write_buffer) {
+	if (this->is_writer) {
+		// Write the index
+		if (this->indexed)
+			this->write_footer();
+		// Write the signature
+		char signature[] = {'K', 'F', 'F'};
+		this->write((uint8_t *)signature, 3);
+		
+		// Write the end of the file
+		if (write_buffer) {
+			// The file was never opened
+			if (not this->writing_started) {
+				this->writing_started = true;
+				this->fs.open(this->filename, fstream::binary | fstream::out);
+			} else if (this->tmp_closed) {
+				this->reopen();
+			}
+			// Write the buffer
+			cout << this->next_free << endl;
+			this->fs.write((char *)this->file_buffer, this->next_free);
+			if (this->fs.fail()) {
+				cerr << "Filesystem problem during buffer disk saving" << endl;
+				exit(1);
+			}
+			this->file_size += this->next_free;
+			this->next_free = 0;
+
+			this->fs.close();
+		} else {
+			this->delete_on_destruction = true;
+		}
+	}
+	else if (this->is_reader) {
+
+	}
+
+	this->tmp_closed = false;
+	this->is_writer = false;
+	this->is_reader = false;
 }
 
 
 Kff_file::~Kff_file() {
+	this->close();
+
+	delete[] this->file_buffer;
+	if (this->delete_on_destruction and this->file_size > 0)
+		remove(this->filename.c_str());
+
 	if (this->footer != nullptr)
 		delete this->footer;
 
 	for (Section_Index * si : this->index)
 		delete si;
-
-	this->close();
 }
 
 
@@ -190,7 +241,6 @@ void Kff_file::complete_header() {
 	// If the metadata has not been read, jump over
 	if (this->is_reader) {
 		this->jump(this->metadata_size);
-		// this->fs.seekp((long)this->fs.tellp() + (long)this->metadata_size);
 	}
 
 	// If metadata has not been write, write a 0 byte one.
@@ -198,7 +248,6 @@ void Kff_file::complete_header() {
 		this->write_metadata(0, nullptr);
 	}
 
-	// this->current_position = this->fs.tellp();
 	this->header_over = true;
 }
 
@@ -207,27 +256,25 @@ void Kff_file::footer_discovery() {
 	long current_pos = this->tellp();
 
 	// Look at the footer
-	this->fs.seekg(-23, this->fs.end);
-	this->current_position = this->fs.tellp();
+	this->jump_to(23, true);
 	// Try to extract the footer size
 	stringstream ss;
 	char c = 'o';
 	for (uint i=0 ; i<11 ; i++) {
-		this->fs >> c;
+		this->read((uint8_t *)&c, 1);
 		ss << c;
 	}
 	if (ss.str().compare("footer_size") != 0) {
 		return;
 	}
-	this->fs >> c; // remove the '\0'
+	this->jump(1); // remove the '\0'
 
 	uint64_t size = 0;
 	uint8_t buff[8];
 	this->read(buff, 8);
 	load_big_endian(buff, 8, size);
 	// Jump to value section start
-	this->fs.seekg(-size-3, this->fs.end);
-	this->current_position = this->fs.tellp();
+	this->jump_to(size+3, true);
 
 	this->footer = new Section_GV(this);
 	this->footer->close();
@@ -287,50 +334,187 @@ void Kff_file::read_index(long position) {
 }
 
 
-bool Kff_file::read(uint8_t * bytes, size_t size) {
-	if (this->end_position - this->tellp() + 3 < (long)size)
-		return false;
-	this->fs.read((char *)bytes, size);
-	this->current_position += size;
-	return true;
-}
-
-bool Kff_file::write(const uint8_t * bytes, size_t size) {
-	if (this->tmp_closed) {
-		this->reopen();
+void Kff_file::read(uint8_t * bytes, size_t size) {
+	if (not this->is_reader) {
+		cerr << "Cannot read a file in writing mode." << endl;
+		exit(1);
 	}
-	this->fs.write((char*)bytes, size);
-	this->current_position += size;
-	return true;
-}
 
-bool Kff_file::write_at(const uint8_t * bytes, size_t size, long position) {
-	if (this->tmp_closed) {
-		this->reopen();
+	// Read in the file
+	if (this->current_position < this->file_size) {
+		// Read the end of the file and the beginning of the buffer
+		if (this->current_position + size > this->file_size) {
+			uint64_t fs_read_size = this->file_size - this->current_position;
+			this->read(bytes, fs_read_size);
+			this->read(bytes + fs_read_size, size - fs_read_size);
+			return;
+		}
+		// Read inside of the file
+		else {
+			// File not opened
+			if (not this->fs.is_open())
+				this->fs.open(this->filename, fstream::binary | fstream::in);
+
+			this->fs.read((char *)bytes, size);
+			if (this->fs.fail()) {
+				cerr << "Impossible to read the file on disk" << endl;
+				exit(1);
+			}
+		}
 	}
-	long current_pos = this->fs.tellp();
-	this->fs.seekp(position);
-	this->fs.write((char*)bytes, size);
-	this->fs.seekp(current_pos);
+	// Read in the buffer
+	else {
+		// Compute the buffer positions to read
+		uint64_t buffer_position = this->current_position - this->file_size;
+		if (buffer_position + size > this->next_free) {
+			cerr << "Read out of the file, Byte " << (this->file_size + this->next_free) << endl;
+			exit(1);
+		}
+
+		memcpy(bytes, this->file_buffer + buffer_position, size);
+	}
 	
-	return true;
+	this->current_position += size;
 }
 
-long Kff_file::tellp() {
-	if (not this->header_over) {
-		this->current_position = this->fs.tellp();
+void Kff_file::write(const uint8_t * bytes, size_t size) {
+	if (not this->is_writer) {
+		if (this->is_reader)
+			cerr << "Cannot write a file in reading mode." << endl;
+		else
+			cerr << "Cannot write a closed file" << endl;
+		exit(1);
 	}
+
+	uint64_t buff_space = this->buffer_size - this->next_free;
+
+	// Resize buffer
+	while (buff_space < size and this->buffer_size < this->max_buffer_size) {
+		// Enlarge the buffer
+		this->buffer_size *= 2;
+		uint8_t * next_buffer = new uint8_t[this->buffer_size];
+		// Copy the previous values
+		memcpy(next_buffer, this->file_buffer, this->next_free);
+		buff_space = this->buffer_size - this->next_free;
+		// Fill the empty part with 0s
+		memset(next_buffer + this->next_free, 0, buff_space);
+		// remove the previous space
+		delete[] this->file_buffer;
+		this->file_buffer = next_buffer;
+	}
+
+	// fill the buffer
+	if (buff_space >= size) {
+		memcpy(this->file_buffer + this->next_free, bytes, size);
+		this->next_free += size;
+	}
+	// Not enought space, write the file
+	else {
+		// Open the file if needed
+		if (not this->writing_started) {
+			this->fs.open(this->filename, fstream::binary | fstream::out);
+			this->writing_started = true;
+		} else if (this->tmp_closed) {
+			this->reopen();
+		}
+
+		this->fs.write((char*)this->file_buffer, this->next_free);
+		this->fs.write((char*)bytes, size);
+		this->file_size += this->next_free + size;
+		this->next_free = 0;
+
+		if (this->fs.fail()) {
+			cerr << "File system error while writing " << this->filename << endl;
+			exit(1);
+		}
+	}
+
+	this->current_position += size;
+}
+
+void Kff_file::write_at(const uint8_t * bytes, size_t size, unsigned long position) {
+	if (not this->is_writer) {
+		if (this->is_reader)
+			cerr << "Cannot write a file in reading mode." << endl;
+		else
+			cerr << "Cannot write a closed file" << endl;
+		exit(1);
+	}
+
+	if (position > this->file_size + this->next_free) {
+		cerr << "Cannot write after the last byte of the file." << endl;
+		exit(1);
+	}
+
+	// Write the file on disk
+	if (position <= this->file_size) {
+		// Only in file
+		if (position + size <= this->file_size) {
+			if (this->tmp_closed) {
+				this->reopen();
+			}
+			this->fs.seekp(position);
+			this->fs.write((char*)bytes, size);
+			if (this->fs.fail()) {
+				cerr << "File system error while writing " << this->filename << " at position " << position << endl;
+				exit(1);
+			}
+			this->fs.seekp(this->file_size);
+		}
+		// On both file and buffer
+		else {
+			uint64_t in_file_size = this->file_size - position;
+			// Write the file part
+			this->write_at(bytes, in_file_size, position);
+			// Write the buffer part
+			this->write_at(bytes + in_file_size, size - in_file_size, position + in_file_size);
+		}
+	}
+	// Write the buffer in RAM
+	else {
+		long corrected_position = position - this->file_size;
+		
+		// Write in the current buffer space
+		if (corrected_position + size <= this->next_free) {
+			memcpy(this->file_buffer + corrected_position, bytes, size);
+		}
+		// Spillover the buffer
+		else {
+			this->next_free = corrected_position;
+			this->write(bytes, size);
+		}
+	}
+}
+
+unsigned long Kff_file::tellp() {
 	return this->current_position;
 }
 
 
 void Kff_file::jump(long size) {
-	this->fs.seekp(this->tellp() + size);
-	this->current_position += size;
+	this->jump_to(this->current_position + size);
 }
 
-void Kff_file::jump_to(unsigned long position) {
-	this->jump(static_cast<long>(position) - this->tellp());
+void Kff_file::jump_to(unsigned long position, bool from_end) {
+	if (this->file_size + this->next_free < position) {
+		cerr << "Jump out of the file." << endl;
+		exit(1);
+	}
+
+	// Determine absolute position
+	if (from_end) {
+		position = this->file_size + this->next_free - position;
+	}
+
+	// Jump into the written file
+	if (position <= this->file_size) {
+		this->fs.seekp(position);
+	}
+	// Jump into the buffer
+	else if (this->current_position < this->file_size) {
+		this->fs.seekg(0, this->fs.end);
+	}
+	this->current_position = position;
 }
 
 
@@ -374,27 +558,6 @@ void Kff_file::write_footer() {
 }
 
 
-void Kff_file::close() {
-	// Write the end signature
-	if (this->tmp_closed)
-		this->reopen();
-
-	if (this->is_writer) {
-		// Write the index
-		if (this->indexed)
-			this->write_footer();
-		// End signature
-		this->fs << "KFF";
-	}
-
-	if (this->fs.is_open())
-		this->fs.close();
-	this->tmp_closed = false;
-	this->is_writer = false;
-	this->is_reader = false;
-}
-
-
 // ----- Header functions -----
 
 void Kff_file::write_encoding(uint8_t a, uint8_t c, uint8_t g, uint8_t t) {
@@ -414,23 +577,16 @@ void Kff_file::write_encoding(uint8_t a, uint8_t c, uint8_t g, uint8_t t) {
 
 	// Write to file
 	uint8_t code = (a << 6) | (c << 4) | (g << 2) | t;
-	long position = this->fs.tellp();
-	this->fs.seekg(5, this->fs.beg);
-	this->fs << code;
-	this->fs.seekg(position, this->fs.beg);
+	this->write_at(&code, 1, 5);
 }
 
 void Kff_file::set_uniqueness(bool uniqueness) {
-	long position = this->fs.tellp();
-	this->fs.seekg(6, this->fs.beg);
-	this->fs << (char)(uniqueness ? 1 : 0);
-	this->fs.seekg(position, this->fs.beg);	
+	uint8_t bit_uniq = uniqueness ? 1 : 0;
+	this->write_at(&bit_uniq, 1, 6);
 }
 void Kff_file::set_canonicity(bool canonicity) {
-	long position = this->fs.tellp();
-	this->fs.seekg(6, this->fs.beg);
-	this->fs << (char)(canonicity ? 1 : 0);
-	this->fs.seekg(position, this->fs.beg);
+	uint8_t bit_canon = canonicity ? 1 : 0;
+	this->write_at(&bit_canon, 1, 7);
 }
 
 void Kff_file::write_encoding(uint8_t * encoding) {
@@ -440,7 +596,7 @@ void Kff_file::write_encoding(uint8_t * encoding) {
 void Kff_file::read_encoding() {
 	uint8_t code, a, c, g, t;
 	// Get code values
-	this->fs >> code;
+	this->read(&code, 1);
 
 	// Split each nucleotide encoding
 	this->encoding[0] = a = (code >> 6) & 0b11;
@@ -455,19 +611,19 @@ void Kff_file::read_encoding() {
 }
 
 void Kff_file::write_metadata(uint32_t size, const uint8_t * data) {
+	if (this->header_over) {
+		cerr << "The metadata have to be written prior to other content." << endl;
+		exit(1);
+	}
+
 	uint8_t buff[4];
 	store_big_endian(buff, 4, size);
 	this->write(buff, 4);
-
 	this->write(data, size);
+
 	this->header_over = true;
 }
 
-void Kff_file::read_size_metadata() {
-	uint8_t buff[4];
-	this->read(buff, 4);
-	load_big_endian(buff, 4, this->metadata_size);
-}
 
 void Kff_file::read_metadata(uint8_t * data) {
 	this->read(data, this->metadata_size);
@@ -498,9 +654,7 @@ char Kff_file::read_section_type() {
 		this->complete_header();
 	}
 
-	char type = '\0';
-	this->fs >> type;
-	this->fs.seekp((long)this->fs.tellp() - 1l);
+	char type = this->fs.peek();
 	return type;
 }
 
@@ -654,9 +808,9 @@ void Section_Index::close() {
 			// Section type
 			type = it->second;
 			this->file->write((uint8_t *)&type, 1);
-		    // Section index
-		    store_big_endian(buff, 8, it->first);
-		    this->file->write(buff, 8);
+			// Section index
+			store_big_endian(buff, 8, it->first);
+			this->file->write(buff, 8);
 		}
 		store_big_endian(buff, 8, this->next_index);
 		this->file->write(buff, 8);
@@ -1260,10 +1414,8 @@ void Kff_reader::read_next_block() {
 }
 
 bool Kff_reader::has_next() {
-	// cout << "next " << endl;
 	if (current_section == NULL and (file->end_position > file->tellp()))
 		read_until_first_section_block();
-	// cout << "/next " << endl;
 	return file->end_position > file->tellp();
 }
 
