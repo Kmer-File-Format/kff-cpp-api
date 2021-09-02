@@ -182,7 +182,6 @@ void Kff_file::close(bool write_buffer) {
 				this->reopen();
 			}
 			// Write the buffer
-			cout << this->next_free << endl;
 			this->fs.write((char *)this->file_buffer, this->next_free);
 			if (this->fs.fail()) {
 				cerr << "Filesystem problem during buffer disk saving" << endl;
@@ -634,7 +633,7 @@ bool Kff_file::jump_next_section() {
 	if (not is_reader)
 		return false;
 	char section_type = read_section_type();
-	if (fs.eof())
+	if (this->current_position == this->file_size + this->next_free)
 		return false;
 	if (section_type == 'r' or section_type == 'm') {
 		Block_section_reader * section = Block_section_reader::construct_section(this);
@@ -654,8 +653,10 @@ char Kff_file::read_section_type() {
 		this->complete_header();
 	}
 
-	char type = this->fs.peek();
-	return type;
+	if (this->current_position < this->file_size)
+		return this->fs.peek();
+	else
+		return (char)this->file_buffer[this->current_position];
 }
 
 

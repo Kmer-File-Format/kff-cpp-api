@@ -41,7 +41,6 @@ class Kff_reader;
  */
 class Kff_file {
 private:
-	std::string filename;
 	std::fstream fs;
 	unsigned long current_position;
 
@@ -71,6 +70,7 @@ private:
 	void read_index(long position);
 
 public:
+	std::string filename;
 	uint8_t major_version;
 	uint8_t minor_version;
 	bool uniqueness;
