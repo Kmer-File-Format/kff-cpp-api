@@ -40,7 +40,7 @@ class Kff_reader;
  *
  */
 class Kff_file {
-private:
+public:
 	std::fstream fs;
 	unsigned long current_position;
 

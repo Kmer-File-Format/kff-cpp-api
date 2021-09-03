@@ -54,7 +54,9 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	this->writing_started = false;
 	this->next_free = 0;
 	this->buffer_size = 1 << 10; // 1 KB
+	// this->buffer_size = 1 << 4;
 	this->max_buffer_size = 1 << 20; // 1 MB
+	// this->max_buffer_size = 1 << 6;
 	this->file_buffer = new uint8_t[this->buffer_size];
 	this->file_size = 0;
 
@@ -159,7 +161,6 @@ void Kff_file::open(string mode) {
 		// Discover footer
 		this->footer_discovery();
 		this->index_discovery();
-
 	}
 }
 
@@ -189,11 +190,12 @@ void Kff_file::close(bool write_buffer) {
 			}
 			this->file_size += this->next_free;
 			this->next_free = 0;
-
-			this->fs.close();
 		} else {
 			this->delete_on_destruction = true;
 		}
+
+		if (this->fs.is_open())
+			this->fs.close();
 	}
 	else if (this->is_reader) {
 
@@ -354,9 +356,11 @@ void Kff_file::read(uint8_t * bytes, size_t size) {
 			if (not this->fs.is_open())
 				this->fs.open(this->filename, fstream::binary | fstream::in);
 
+			// long tp = this->fs.tellp();
 			this->fs.read((char *)bytes, size);
 			if (this->fs.fail()) {
-				cerr << "Impossible to read the file on disk" << endl;
+				// cout << tp << endl;
+				cerr << "Impossible to read the file " << this->filename << " on disk." << endl;
 				exit(1);
 			}
 		}
@@ -491,6 +495,7 @@ unsigned long Kff_file::tellp() {
 
 
 void Kff_file::jump(long size) {
+	// cout << "Jump " << this->current_position << " " << size << " / " << this->file_size << " " << this->next_free << endl;
 	this->jump_to(this->current_position + size);
 }
 
@@ -504,13 +509,14 @@ void Kff_file::jump_to(unsigned long position, bool from_end) {
 	if (from_end) {
 		position = this->file_size + this->next_free - position;
 	}
+	// cout << "position " << position << endl;
 
 	// Jump into the written file
-	if (position <= this->file_size) {
+	if (position < this->file_size) {
 		this->fs.seekp(position);
 	}
 	// Jump into the buffer
-	else if (this->current_position < this->file_size) {
+	else /*if (this->current_position < this->file_size)*/ {
 		this->fs.seekg(0, this->fs.end);
 	}
 	this->current_position = position;
@@ -653,10 +659,12 @@ char Kff_file::read_section_type() {
 		this->complete_header();
 	}
 
-	if (this->current_position < this->file_size)
+	if (this->current_position < this->file_size) {
 		return this->fs.peek();
-	else
-		return (char)this->file_buffer[this->current_position];
+	}
+	else {
+		return (char)this->file_buffer[this->current_position - this->file_size];
+	}
 }
 
 
