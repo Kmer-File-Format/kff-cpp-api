@@ -59,6 +59,7 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	// this->max_buffer_size = 1 << 6;
 	this->file_buffer = new uint8_t[this->buffer_size];
 	this->file_size = 0;
+	this->delete_on_destruction = false;
 
 	this->open(mode);
 }
@@ -95,7 +96,6 @@ void Kff_file::open(string mode) {
 	this->indexed = false;
 	this->footer = nullptr;
 	this->footer_discovery_ended = true;
-	this->delete_on_destruction = false;
 
 	// Write the signature and the version at the beginning of the file
 	if (this->is_writer) {
@@ -198,7 +198,7 @@ void Kff_file::close(bool write_buffer) {
 			this->fs.close();
 	}
 	else if (this->is_reader) {
-
+		
 	}
 
 	this->tmp_closed = false;
@@ -211,8 +211,9 @@ Kff_file::~Kff_file() {
 	this->close();
 
 	delete[] this->file_buffer;
-	if (this->delete_on_destruction and this->file_size > 0)
+	if (this->delete_on_destruction and this->file_size > 0) {
 		remove(this->filename.c_str());
+	}
 
 	if (this->footer != nullptr)
 		delete this->footer;
