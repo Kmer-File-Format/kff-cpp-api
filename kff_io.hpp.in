@@ -551,6 +551,7 @@ private:
 public:
 	uint64_t k;
 	uint64_t data_size;
+	uint64_t max;
 	
 	Kff_file * file;
 	
