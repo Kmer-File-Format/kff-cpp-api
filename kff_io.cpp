@@ -231,7 +231,7 @@ void Kff_file::set_indexation(bool indexed) {
 
 void Kff_file::register_position(char section_type) {
 	if (this->is_writer and this->indexed) {
-		this->section_positions[this->fs.tellp()] = section_type;
+		this->section_positions[this->tellp()] = section_type;
 	}
 }
 
@@ -550,8 +550,8 @@ void Kff_file::write_footer() {
 	// Compute end position
 	long position = si.beginning + 17 + 9 * this->section_positions.size();
 	// Add the values
-	for (map<int64_t, char>::iterator it=this->section_positions.begin() ; it!=this->section_positions.end() ; it++) {
-		si.register_section(it->second, it->first - position);
+	for (auto & it : this->section_positions) {
+		si.register_section(it.second, it.first - position);
 	}
 
 	si.close();
