@@ -989,6 +989,7 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) : Section(file) {
 	uint64_t data_size = file->global_vars["data_size"];
 
 	this->nb_blocks = 0;
+	this->remaining_blocks = 0;
 
 	this->k = k;
 	this->m = m;
@@ -1028,7 +1029,15 @@ Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 	sm.file = nullptr;
 	beginning = sm.beginning;
 	nb_blocks = sm.nb_blocks;
+
 	m = sm.m;
+	k = sm.k;
+	max = sm.max;
+	data_size = sm.data_size;
+
+	this->remaining_blocks = sm.remaining_blocks;
+	this->nb_kmers_bytes = nb_kmers_bytes;
+
 	nb_bytes_mini = sm.nb_bytes_mini;
 	std::swap(minimizer, sm.minimizer);
 

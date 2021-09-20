@@ -306,9 +306,6 @@ public:
 
 class Block_section_reader {
 protected:
-	uint64_t k;
-	uint64_t max;
-	uint64_t data_size;
 	uint8_t nb_kmers_bytes;
 
 	friend class Kff_reader;
@@ -321,6 +318,9 @@ public:
 	 */
 	uint64_t nb_blocks;
 	uint64_t remaining_blocks;
+	uint64_t k;
+	uint64_t max;
+	uint64_t data_size;
 
 	virtual ~Block_section_reader(){};
 
@@ -431,13 +431,13 @@ private:
 	friend class Kff_file;
 	friend class Block_section_reader;
 
-	uint8_t m;
 	uint8_t nb_bytes_mini;
 	uint8_t mini_pos_bytes;
 
 	uint32_t read_section_header();
 
 public:
+	uint8_t m;
 	Section_Minimizer(Kff_file * file);
 	Section_Minimizer& operator= ( Section_Minimizer && sm);
 	~Section_Minimizer();
