@@ -302,7 +302,7 @@ void Kff_file::index_discovery() {
 		char type = this->fs.peek();
 		if (type == 'i') {
 			this->indexed = true;
-			this->read_index(this->fs.tellp());
+			this->read_index(this->tellp());
 		}
 
 	}
