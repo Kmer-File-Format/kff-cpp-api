@@ -82,7 +82,7 @@ void Kff_file::open(string mode) {
 			// Compute the file length
 			long position = this->fs.tellp();
 			this->fs.seekg(0, this->fs.end);
-			this->file_size = this->fs.tellp() - position;
+			this->file_size = (long)(this->fs.tellp()) - position;
 			// Go back to the beginning
 			this->fs.seekg(0, this->fs.beg);
 		}
