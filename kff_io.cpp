@@ -336,7 +336,7 @@ void Kff_file::read_index(long position) {
 }
 
 
-void Kff_file::read(uint8_t * bytes, size_t size) {
+void Kff_file::read(uint8_t * bytes, unsigned long size) {
 	if (not this->is_reader) {
 		cerr << "Cannot read a file in writing mode." << endl;
 		exit(1);
@@ -381,7 +381,7 @@ void Kff_file::read(uint8_t * bytes, size_t size) {
 	this->current_position += size;
 }
 
-void Kff_file::write(const uint8_t * bytes, size_t size) {
+void Kff_file::write(const uint8_t * bytes, unsigned long size) {
 	if (not this->is_writer) {
 		if (this->is_reader)
 			cerr << "Cannot write a file in reading mode." << endl;
@@ -390,7 +390,7 @@ void Kff_file::write(const uint8_t * bytes, size_t size) {
 		exit(1);
 	}
 
-	uint64_t buff_space = this->buffer_size - this->next_free;
+	unsigned long buff_space = this->buffer_size - this->next_free;
 
 	// Resize buffer
 	while (buff_space < size and this->buffer_size < this->max_buffer_size) {
@@ -436,7 +436,7 @@ void Kff_file::write(const uint8_t * bytes, size_t size) {
 	this->current_position += size;
 }
 
-void Kff_file::write_at(const uint8_t * bytes, size_t size, unsigned long position) {
+void Kff_file::write_at(const uint8_t * bytes, unsigned long size, unsigned long position) {
 	if (not this->is_writer) {
 		if (this->is_reader)
 			cerr << "Cannot write a file in reading mode." << endl;
@@ -467,7 +467,7 @@ void Kff_file::write_at(const uint8_t * bytes, size_t size, unsigned long positi
 		}
 		// On both file and buffer
 		else {
-			uint64_t in_file_size = this->file_size - position;
+			unsigned long in_file_size = this->file_size - position;
 			// Write the file part
 			this->write_at(bytes, in_file_size, position);
 			// Write the buffer part
@@ -476,7 +476,7 @@ void Kff_file::write_at(const uint8_t * bytes, size_t size, unsigned long positi
 	}
 	// Write the buffer in RAM
 	else {
-		long corrected_position = position - this->file_size;
+		unsigned long corrected_position = position - this->file_size;
 		
 		// Write in the current buffer space
 		if (corrected_position + size <= this->next_free) {

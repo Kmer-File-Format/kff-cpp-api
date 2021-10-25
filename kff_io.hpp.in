@@ -132,18 +132,18 @@ public:
 	 * 
 	 * @return true if everything is ok.
 	 */
-	void read(uint8_t * bytes, size_t size);
+	void read(uint8_t * bytes, unsigned long size);
 	/** Writes size bytes into the file buffer. Written on disk if size > 1MB or on file closing.
 	 * @param bytes Bytes to write
 	 * @param Size in bytes to copy
 	 */
-	void write(const uint8_t * bytes, size_t size);
+	void write(const uint8_t * bytes, unsigned long size);
 	/** Writes size bytes at position and returns at the same position than initially.
 	 * @param bytes Bytes to write.
 	 * @param size Number of bytes to write
 	 * @param position Where to write in the file (will overwrite the previous data)
 	 */
-	void write_at(const uint8_t * bytes, size_t size, unsigned long position);
+	void write_at(const uint8_t * bytes, unsigned long size, unsigned long position);
 	/** Give the current position in the file
 	 * 
 	 * @return position from the beginning of the file.
