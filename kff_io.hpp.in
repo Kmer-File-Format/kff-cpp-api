@@ -12,6 +12,7 @@
 
 #include <fstream>
 #include <unordered_map>
+#include <map>
 #include <vector>
 
 #ifndef KFF_IO
