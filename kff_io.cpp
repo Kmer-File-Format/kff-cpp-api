@@ -451,7 +451,7 @@ void Kff_file::write_at(const uint8_t * bytes, unsigned long size, unsigned long
 	}
 
 	// Write the file on disk
-	if (position <= this->file_size) {
+	if (position < this->file_size) {
 		// Only in file
 		if (position + size <= this->file_size) {
 			if (this->tmp_closed) {
