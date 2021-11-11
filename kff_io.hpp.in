@@ -266,8 +266,28 @@ class Section {
 
 		Section(Kff_file * file);
 		virtual ~Section() {};
+		
+		/** Copy the current section in the file poited by the function.
+		 * 
+		 * @param file The file where to copy the section
+		 **/
+		virtual void copy(Kff_file * file) {};
 		void close();
 };
+
+
+class SectionBuilder {
+public:
+	/** Build the next section in the file.
+	 * The file pointer must be aligned on the first Byte of a section.
+	 * 
+	 * @param file Pointer to a file to read.
+	 * 
+	 * @return The correct section from the file.
+	 **/
+	static Section * build(Kff_file * file);
+};
+
 
 /**
  * File manipulator for Global Variable sections.
@@ -297,8 +317,13 @@ public:
 	 *
 	 */
 	void write_var(const std::string & var_name, uint64_t value);
+	/** Copy the current section in the file pointed by the function.
+	 * 
+	 * @param file The file where to copy the section
+	 **/
+	void copy(Kff_file * file);
 	/**
-	 * Close the section.
+	 * Closes the section.
 	 * If w mode, go back to the beginning of the section to write the correct number of variables.
 	 *
 	 */
@@ -359,6 +384,7 @@ class Section_Index : public Section {
 private:
 
 	friend class Kff_file;
+	using Section::copy;
 
 public:
 	std::map<int64_t, char> index;
@@ -411,6 +437,11 @@ public:
 	 * Jumb over the next block of the section.
 	 */
 	void jump_sequence();
+	/** Copy the current section in the file pointed by the function.
+	 * 
+	 * @param file The file where to copy the section
+	 **/
+	void copy(Kff_file * file);
 	/**
 	 * Close the section.
 	 * If w mode, go back to the beginning of the section to write the correct number of blocks.
@@ -513,6 +544,11 @@ public:
 	 * Jumb over the next block of the section.
 	 */
 	void jump_sequence();
+	/** Copy the current section in the file pointed by the function.
+	 * 
+	 * @param file The file where to copy the section
+	 **/
+	void copy(Kff_file * file);
 	/**
 	 * Close the section.
 	 * If w mode, go back to the beginning of the section to write the correct number of blocks.
