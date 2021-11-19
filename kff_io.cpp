@@ -194,8 +194,8 @@ void Kff_file::close(bool write_buffer) {
 			this->delete_on_destruction = true;
 		}
 
-		cout << "delete_on_destruction " << delete_on_destruction << endl;
-		cout << this->filename << endl;
+		// cout << "delete_on_destruction " << delete_on_destruction << endl;
+		// cout << this->filename << endl;
 		if (this->fs.is_open())
 			this->fs.close();
 	}
@@ -688,7 +688,6 @@ void Section::close() {
 
 Section * SectionBuilder::build(Kff_file * file) {
 	char type = file->read_section_type();
-	cout << type << endl;
 	switch (type) {
 		case 'i':
 			return new Section_Index(file);
@@ -984,7 +983,7 @@ void Section_Raw::copy(Kff_file * file) {
 		// Read
 		uint64_t size = this->read_compacted_sequence(seq_buffer, data_buffer);
 		// Rewrite
-		sr.write_compacted_sequence(seq_buffer, size, data_buffer);
+		sr.write_compacted_sequence(seq_buffer, this->k + size - 1, data_buffer);
 	}
 	// Clos the copy
 	sr.close();
@@ -1189,7 +1188,7 @@ void Section_Minimizer::copy(Kff_file * file) {
 		// Read
 		uint64_t size = this->read_compacted_sequence_without_mini(seq_buffer, data_buffer, mini_pos);
 		// Rewrite
-		sm.write_compacted_sequence_without_mini(seq_buffer, size, mini_pos, data_buffer);
+		sm.write_compacted_sequence_without_mini(seq_buffer, this->k + size - 1 - this->m, mini_pos, data_buffer);
 	}
 	// Clos the copy
 	sm.close();
