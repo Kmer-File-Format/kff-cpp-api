@@ -768,6 +768,10 @@ void Section_GV::read_var() {
 }
 
 void Section_GV::copy(Kff_file * file) {
+	// Remove empty variable sections
+	if (this->vars.size() == 0)
+		return;
+
 	// Open the copy
 	Section_GV sgv(file);
 	// Copy all the variables
