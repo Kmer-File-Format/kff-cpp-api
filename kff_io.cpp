@@ -373,7 +373,8 @@ void Kff_file::read(uint8_t * bytes, unsigned long size) {
 		// Compute the buffer positions to read
 		uint64_t buffer_position = this->current_position - this->file_size;
 		if (buffer_position + size > this->next_free) {
-			cerr << "Read out of the file, Byte " << (this->file_size + this->next_free) << endl;
+			string error = string("Read out of the file, Byte ") + to_string(this->file_size + this->next_free);
+			throw out_of_range(error);
 			exit(1);
 		}
 
