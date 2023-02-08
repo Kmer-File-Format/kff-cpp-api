@@ -59,8 +59,8 @@ void high_level_api_kmer_read(const string & filename) {
 		// read the kmer and its data
 		reader.next_kmer(kmer, data);
 		// Get the kmer/data caracteristics
-		uint64_t k = reader.get_var("k");
-		uint64_t data_size = reader.get_var("data_size");
+		uint64_t k = reader.k;
+		uint64_t data_size = reader.data_size;
 
 		// read the values to be sure that the compiler do not over optimize the previous lines
 		// kmer

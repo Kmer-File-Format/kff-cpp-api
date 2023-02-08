@@ -64,9 +64,12 @@ The *get_encoding* function return an array of the 4 encoded values in order A, 
 ```C++
   // Get the file encoding
   uint8_t * encoding = reader.get_encoding();
-  // Get the current k and data_size values
-  uint64_t k = reader.get_var("k");
-  uint64_t ds = reader.get_var("data_size");
+  // Get a variable from the previous value section (minimizer size example)
+  // WARNING: This get function is base on unordered_map and can be very slow if repeated a lot
+  uint64_t m = reader.get_var("m");
+  // Variables that are usefull for all kmers are directly available a properties of the object
+  uint64_t k = reader.k;
+  uint64_t ds = reader.data_size;
 ```
 
 
