@@ -976,6 +976,26 @@ uint64_t Section_Raw::read_compacted_sequence(uint8_t* seq, uint8_t* data) {
 }
 
 
+uint64_t Section_Raw::read_compacted_sequence(uint8_t* seq_data) {
+	uint8_t buff[8];
+	uint64_t nb_kmers_in_block = 1;
+	// 1 - Read the number of kmers in the sequence
+	if (nb_kmers_bytes != 0) {
+		file->read(buff, this->nb_kmers_bytes);
+		load_big_endian(buff, this->nb_kmers_bytes, nb_kmers_in_block);
+	}
+	// 2 - Read the sequence
+	size_t seq_size = nb_kmers_in_block + k - 1;
+	size_t seq_bytes_needed = (seq_size + 3) / 4;
+	uint64_t data_bytes_used = data_size * nb_kmers_in_block;
+	this->file->read(seq_data, seq_bytes_needed + data_bytes_used);
+
+	this->remaining_blocks -= 1;
+
+	return nb_kmers_in_block;
+}
+
+
 void Section_Raw::copy(Kff_file * file) {
 	uint max_nucl = this->k + this->max - 1;
 	uint8_t * seq_buffer = new uint8_t[(max_nucl + 3) / 4];
@@ -1173,6 +1193,27 @@ uint64_t Section_Minimizer::read_compacted_sequence_without_mini(uint8_t* seq, u
 	uint64_t data_bytes_needed = bytes_from_bit_array(data_size*8, nb_kmers_in_block);
 	file->read(data, data_bytes_needed);
 	// cout << data_bytes_needed << endl;
+
+	this->remaining_blocks -= 1;
+	return nb_kmers_in_block;
+}
+
+uint64_t Section_Minimizer::read_compacted_sequence_without_mini(uint8_t* seq_data, uint64_t & mini_pos) {
+	uint8_t buff[8];
+	uint64_t nb_kmers_in_block = 1;
+	// 1 - Read the number of kmers in the sequence
+	if (nb_kmers_bytes != 0) {
+		file->read(buff, this->nb_kmers_bytes);
+		load_big_endian(buff, this->nb_kmers_bytes, nb_kmers_in_block);
+	}
+	// 2 - Read the minimizer position
+	file->read(buff, this->mini_pos_bytes);
+	load_big_endian(buff, this->mini_pos_bytes, mini_pos);
+	// 3 - Read the sequence + data
+	size_t seq_size = nb_kmers_in_block + k - m - 1;
+	size_t seq_bytes_needed = bytes_from_bit_array(2, seq_size);
+	uint64_t data_bytes_needed = bytes_from_bit_array(data_size*8, nb_kmers_in_block);
+	file->read(seq_data, seq_bytes_needed + data_bytes_needed);
 
 	this->remaining_blocks -= 1;
 	return nb_kmers_in_block;
@@ -1384,17 +1425,41 @@ uint64_t Section_Minimizer::read_compacted_sequence(uint8_t* seq, uint8_t* data)
 	return nb_kmers_in_block;
 }
 
+uint64_t Section_Minimizer::read_compacted_sequence(uint8_t* seq_data) {
+	// Read the block
+	uint64_t mini_pos;
+	uint64_t nb_kmers_in_block = this->read_compacted_sequence_without_mini(seq_data, mini_pos);
+	
+	// Determine the number of new bytes needed for minimizer insertion
+	uint64_t seq_size_nucls = k - m + nb_kmers_in_block - 1;
+	uint64_t free_nucls = (4 - seq_size_nucls) % 4;
+	uint64_t bytes_needed = (m - free_nucls + 3) / 4;
+	
+	if (bytes_needed > 0)
+	{
+		// Move the data to the right to have the hole needed for minimizer insertion
+		uint64_t seq_size_bytes = (seq_size_nucls + 3) / 4;
+		uint64_t data_size_bytes = data_size * nb_kmers_in_block;
+		for (size_t i=0 ; i<data_size_bytes ; i++)
+		{
+			// Shift the ith byte to "byte_needed" bytes on the right
+			size_t byte_idx = seq_size_bytes + data_size_bytes - 1 - i;
+			seq_data[byte_idx + bytes_needed] = seq_data[byte_idx];
+			seq_data[byte_idx] = 0;
+		}
+	}
+
+	// Insert minimizer
+	this->add_minimizer(nb_kmers_in_block, seq_data, mini_pos);
+	
+	return nb_kmers_in_block;
+}
+
 void Section_Minimizer::close() {
 	if (file->is_writer) {
 		uint8_t tmp[8];
 		store_big_endian(tmp, 8, this->nb_blocks);
 		this->file->write_at(tmp, 8, this->beginning + 1l + (long)this->nb_bytes_mini);
-		// // Save current position
-		// long position = this->file.tellp();
-		// // Go write the number of variables in the correct place
-		// fs.seekp(this->beginning + 1l + (long)this->nb_bytes_mini);
-		// write_value(nb_blocks, fs);
-		// fs.seekp(position);
 	}
 
 	if (file->is_reader) {
@@ -1416,15 +1481,16 @@ Kff_reader::Kff_reader(std::string filename) {
 	// Open the file
 	this->file = new Kff_file(filename, "r");
 
+	this->current_seq_data = new uint8_t[1];
+	this->current_seq_data[0] = 0;
+
 	// Create fake small datastrucutes waiting for the right values.
 	this->current_shifts = new uint8_t*[4];
-	for (uint8_t i=0 ; i<4 ; i++) {
+	this->current_shifts[0] = this->current_seq_data;
+	for (uint8_t i=1 ; i<4 ; i++) {
 		this->current_shifts[i] = new uint8_t[1];
 		this->current_shifts[i][0] = 0;
 	}
-	this->current_sequence = this->current_shifts[0];
-	this->current_data = new uint8_t[1];
-	this->current_data[0] = 0;
 
 	this->current_section = NULL;
 	this->current_kmer = new uint8_t[1];
@@ -1439,11 +1505,11 @@ Kff_reader::Kff_reader(std::string filename) {
 
 Kff_reader::~Kff_reader() {
 	delete[] this->current_kmer;
-	delete[] this->current_data;
+	delete[] this->current_seq_data;
 	if (this->current_section != NULL)
 		delete this->current_section;
 
-	for (uint i=0 ; i<4 ; i++)
+	for (uint i=1 ; i<4 ; i++)
 		delete[] this->current_shifts[i];
 	delete[] this->current_shifts;
 
@@ -1503,6 +1569,7 @@ void Kff_reader::read_until_first_section_block() {
 				uint64_t data_max_size = this->data_size * max;
 				delete[] this->current_seq_data;
 				this->current_seq_data = new uint8_t[seq_max_size + data_max_size];
+				this->current_shifts[0] = this->current_seq_data;
 				memset(this->current_seq_data, 0, seq_max_size + data_max_size);
 			}
 		}
@@ -1520,14 +1587,14 @@ void Kff_reader::read_until_first_section_block() {
 
 void Kff_reader::read_next_block() {
 	// Read from the file
-	current_seq_kmers = remaining_kmers = current_section->read_compacted_sequence(current_sequence, current_data);
+	current_seq_kmers = remaining_kmers = current_section->read_compacted_sequence(current_seq_data);
 	current_seq_nucleotides = remaining_kmers + current_section->k - 1;
 	current_seq_bytes = bytes_from_bit_array(2, current_seq_nucleotides);
 
 	// Create the 4 possible shifts of the sequence for easy use.
 	for (uint8_t i=1 ; i<min((uint64_t)4, remaining_kmers) ; i++) {
 		// Copy
-		memcpy(current_shifts[i], current_sequence, current_seq_bytes);
+		memcpy(current_shifts[i], current_shifts[0], current_seq_bytes);
 		// Shift
 		rightshift8(current_shifts[i], current_seq_bytes, 2 * i);
 	}
@@ -1583,7 +1650,7 @@ bool Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
 
 	memcpy(current_kmer, current_shifts[right_shift]+start_byte, end_byte-start_byte+1);
 	kmer = current_kmer;
-	data = current_data + (current_seq_kmers - remaining_kmers) * this->data_size;
+	data = current_seq_data + current_seq_bytes + (current_seq_kmers - remaining_kmers) * this->data_size;
 	
 	// Read the next block if needed.
 	remaining_kmers -= 1;

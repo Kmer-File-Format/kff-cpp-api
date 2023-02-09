@@ -74,6 +74,6 @@ void high_level_api_kmer_read(const string & filename) {
 	}
 
 	read_time = current_time_micros() - read_time;
-	cout << "Time to read: " << static_cast<double>(read_time)/10000. << endl;
+	cout << "Time to read: " << static_cast<double>(read_time)/1000000.0 << endl;
 	cout << "Useless xor result: " << (uint64_t)xor_test << endl;
 }
