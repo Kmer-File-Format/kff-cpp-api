@@ -48,10 +48,15 @@ public:
 	unsigned long current_position;
 
 	bool writing_started;
-	uint8_t * file_buffer;
 	unsigned long file_size;
-	unsigned long buffer_size;
-	unsigned long max_buffer_size;
+	// Reader buffer
+	uint8_t * reader_buffer;
+	unsigned long reader_buffer_size;
+	unsigned long reader_buffer_position;
+	// Writer buffer
+	uint8_t * writer_buffer;
+	unsigned long writer_buffer_size;
+	unsigned long max_writer_buffer_size;
 	unsigned long next_free;
 	bool delete_on_destruction;
 
@@ -129,14 +134,21 @@ public:
 	 */
 	void close(bool write_buffer=true);
 
-	/** Read a slice of the file and copy it into bytes
+	/** Read a slice of the file from the buffer. Fill the buffer if needed
+	 * @param bytes Bytes array already allocated by the user (minimum size bytes)
+	 * @param Size in bytes to copy
+	 * 
+	 * @return true if everything is ok.
+	 */
+	void buffered_read(uint8_t * bytes, unsigned long size);
+	/** Read a slice of the file or the buffer and copy it into bytes
 	 * @param bytes Bytes array already allocated by the user (minimum size bytes)
 	 * @param Size in bytes to copy
 	 * 
 	 * @return true if everything is ok.
 	 */
 	void read(uint8_t * bytes, unsigned long size);
-	/** Writes size bytes into the file buffer. Written on disk if size > 1MB or on file closing.
+	/** Writes size bytes into the file buffer. Writen on disk if size > 1MB or on file closing.
 	 * @param bytes Bytes to write
 	 * @param Size in bytes to copy
 	 */

@@ -2,7 +2,8 @@
 #include <cassert>
 #include <cstring>
 #include <sstream>
-#include <math.h>
+#include <cmath>
+#include <unistd.h>
 
 #include <map>
 #include <vector>
@@ -52,12 +53,20 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	this->is_reader = false;
 	
 	this->writing_started = false;
+
+	// Reader buffer
+	this->reader_buffer_size = getpagesize() * 4;
+	this->reader_buffer = new uint8_t[reader_buffer_size];
+	this->reader_buffer_position = 0;
+
+	// Writer buffer
 	this->next_free = 0;
-	this->buffer_size = 1 << 10; // 1 KB
-	// this->buffer_size = 1 << 4;
-	this->max_buffer_size = 1 << 20; // 1 MB
-	// this->max_buffer_size = 1 << 6;
-	this->file_buffer = new uint8_t[this->buffer_size];
+	this->writer_buffer_size = 1 << 10; // 1 KB
+	// this->writer_buffer_size = 1 << 4;
+	this->max_writer_buffer_size = 1 << 20; // 1 MB
+	// this->max_writer_buffer_size = 1 << 6;
+	this->writer_buffer = new uint8_t[this->writer_buffer_size];
+
 	this->file_size = 0;
 	this->delete_on_destruction = false;
 
@@ -183,7 +192,7 @@ void Kff_file::close(bool write_buffer) {
 				this->reopen();
 			}
 			// Write the buffer
-			this->fs.write((char *)this->file_buffer, this->next_free);
+			this->fs.write((char *)this->writer_buffer, this->next_free);
 			if (this->fs.fail()) {
 				cerr << "Filesystem problem during buffer disk saving" << endl;
 				exit(1);
@@ -212,7 +221,7 @@ void Kff_file::close(bool write_buffer) {
 Kff_file::~Kff_file() {
 	this->close();
 
-	delete[] this->file_buffer;
+	delete[] this->writer_buffer;
 	if (this->delete_on_destruction and this->file_size > 0) {
 		remove(this->filename.c_str());
 	}
@@ -338,6 +347,43 @@ void Kff_file::read_index(long position) {
 }
 
 
+void Kff_file::buffered_read(uint8_t * bytes, unsigned long size) {
+	unsigned long already_read = 0;
+
+	while (already_read != size)
+	{
+		// Loading the buffer from the file
+		if (this->reader_buffer_position == 0)
+		{
+			unsigned long to_read_fs = min(
+				this->reader_buffer_size,
+				this->file_size - this->tellp() - already_read
+			);
+			cout << "read " << to_read_fs << " " << this->file_size << endl;
+			this->fs.read((char *)this->reader_buffer, to_read_fs);
+
+			if (this->fs.fail()) {
+				cerr << "Impossible to read the file " << this->filename << " on disk." << endl;
+				exit(1);
+			}
+		}
+
+		// Note for improvement: we can imagine to directly access the buffer without copy
+		// Even faster: Using the mmap function (do not work well on network fs)
+		// Memcopy the content of the buffer
+		unsigned long to_read = min(
+			size - already_read,
+			this->reader_buffer_size - this->reader_buffer_position
+		);
+		memcpy(bytes, this->reader_buffer + this->reader_buffer_position, to_read);
+		already_read += to_read;
+		bytes += to_read;
+		this->reader_buffer_position =
+							(this->reader_buffer_position + to_read) % this->reader_buffer_size;
+	}
+}
+
+
 void Kff_file::read(uint8_t * bytes, unsigned long size) {
 	if (not this->is_reader) {
 		cerr << "Cannot read a file in writing mode." << endl;
@@ -359,13 +405,7 @@ void Kff_file::read(uint8_t * bytes, unsigned long size) {
 			if (not this->fs.is_open())
 				this->fs.open(this->filename, fstream::binary | fstream::in);
 
-			// long tp = this->fs.tellp();
-			this->fs.read((char *)bytes, size);
-			if (this->fs.fail()) {
-				// cout << tp << endl;
-				cerr << "Impossible to read the file " << this->filename << " on disk." << endl;
-				exit(1);
-			}
+			this->buffered_read(bytes, size);
 		}
 	}
 	// Read in the buffer
@@ -378,7 +418,7 @@ void Kff_file::read(uint8_t * bytes, unsigned long size) {
 			exit(1);
 		}
 
-		memcpy(bytes, this->file_buffer + buffer_position, size);
+		memcpy(bytes, this->writer_buffer + buffer_position, size);
 	}
 	
 	this->current_position += size;
@@ -393,26 +433,26 @@ void Kff_file::write(const uint8_t * bytes, unsigned long size) {
 		exit(1);
 	}
 
-	unsigned long buff_space = this->buffer_size - this->next_free;
+	unsigned long buff_space = this->writer_buffer_size - this->next_free;
 
 	// Resize buffer
-	while (buff_space < size and this->buffer_size < this->max_buffer_size) {
+	while (buff_space < size and this->writer_buffer_size < this->max_writer_buffer_size) {
 		// Enlarge the buffer
-		this->buffer_size *= 2;
-		uint8_t * next_buffer = new uint8_t[this->buffer_size];
+		this->writer_buffer_size *= 2;
+		uint8_t * next_buffer = new uint8_t[this->writer_buffer_size];
 		// Copy the previous values
-		memcpy(next_buffer, this->file_buffer, this->next_free);
-		buff_space = this->buffer_size - this->next_free;
+		memcpy(next_buffer, this->writer_buffer, this->next_free);
+		buff_space = this->writer_buffer_size - this->next_free;
 		// Fill the empty part with 0s
 		memset(next_buffer + this->next_free, 0, buff_space);
 		// remove the previous space
-		delete[] this->file_buffer;
-		this->file_buffer = next_buffer;
+		delete[] this->writer_buffer;
+		this->writer_buffer = next_buffer;
 	}
 
 	// fill the buffer
 	if (buff_space >= size) {
-		memcpy(this->file_buffer + this->next_free, bytes, size);
+		memcpy(this->writer_buffer + this->next_free, bytes, size);
 		this->next_free += size;
 	}
 	// Not enought space, write the file
@@ -425,7 +465,7 @@ void Kff_file::write(const uint8_t * bytes, unsigned long size) {
 			this->reopen();
 		}
 
-		this->fs.write((char*)this->file_buffer, this->next_free);
+		this->fs.write((char*)this->writer_buffer, this->next_free);
 		this->fs.write((char*)bytes, size);
 		this->file_size += this->next_free + size;
 		this->next_free = 0;
@@ -483,7 +523,7 @@ void Kff_file::write_at(const uint8_t * bytes, unsigned long size, unsigned long
 		
 		// Write in the current buffer space
 		if (corrected_position + size <= this->next_free) {
-			memcpy(this->file_buffer + corrected_position, bytes, size);
+			memcpy(this->writer_buffer + corrected_position, bytes, size);
 		}
 		// Spillover the buffer
 		else {
@@ -515,12 +555,12 @@ void Kff_file::jump_to(unsigned long position, bool from_end) {
 	}
 	// cout << "position " << position << endl;
 
-	// Jump into the written file
+	// Jump into the writen file
 	if (position < this->file_size) {
 		this->fs.seekp(position);
 	}
-	// Jump into the buffer
-	else /*if (this->current_position < this->file_size)*/ {
+	// Jump into the write buffer
+	else {
 		this->fs.seekg(0, this->fs.end);
 	}
 	this->current_position = position;
@@ -621,7 +661,7 @@ void Kff_file::read_encoding() {
 
 void Kff_file::write_metadata(uint32_t size, const uint8_t * data) {
 	if (this->header_over) {
-		cerr << "The metadata have to be written prior to other content." << endl;
+		cerr << "The metadata have to be writen prior to other content." << endl;
 		exit(1);
 	}
 
@@ -667,7 +707,7 @@ char Kff_file::read_section_type() {
 		return this->fs.peek();
 	}
 	else {
-		return (char)this->file_buffer[this->current_position - this->file_size];
+		return (char)this->writer_buffer[this->current_position - this->file_size];
 	}
 }
 
@@ -1109,12 +1149,6 @@ Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 
 void Section_Minimizer::write_minimizer(uint8_t * minimizer) {
 	this->file->write_at(minimizer, this->nb_bytes_mini, this->beginning+1);
-
-	// uint64_t pos = file->fs.tellp();
-	// file->fs.seekp(this->beginning+1);
-	// file->fs.write((char *)minimizer, this->nb_bytes_mini);
-	// memcpy(this->minimizer, minimizer, this->nb_bytes_mini);
-	// file->fs.seekp(pos);
 }
 
 uint32_t Section_Minimizer::read_section_header() {
@@ -1389,12 +1423,6 @@ void Section_Minimizer::close() {
 		uint8_t tmp[8];
 		store_big_endian(tmp, 8, this->nb_blocks);
 		this->file->write_at(tmp, 8, this->beginning + 1l + (long)this->nb_bytes_mini);
-		// // Save current position
-		// long position = this->file.tellp();
-		// // Go write the number of variables in the correct place
-		// fs.seekp(this->beginning + 1l + (long)this->nb_bytes_mini);
-		// write_value(nb_blocks, fs);
-		// fs.seekp(position);
 	}
 
 	if (file->is_reader) {
@@ -1548,10 +1576,12 @@ uint64_t Kff_reader::next_block(uint8_t* & sequence, uint8_t* & data) {
 }
 
 bool Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
+	cout << "next_kmer" << endl;
 	// Verify the abylity to find another kmer in the file.
 	if (!this->has_next()){
 		kmer = NULL;
 		data = NULL;
+		cout << "/next_kmer false" << endl;
 		return false;
 	}
 
@@ -1583,6 +1613,7 @@ bool Kff_reader::next_kmer(uint8_t* & kmer, uint8_t* & data) {
 		}
 	}
 
+	cout << "/next_kmer true" << endl;
 	return true;
 }
 
