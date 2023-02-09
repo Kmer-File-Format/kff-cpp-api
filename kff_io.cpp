@@ -1459,23 +1459,33 @@ void Kff_reader::read_until_first_section_block() {
 		// char section_type = this->file->read_section_type();
 		char section_type = file->read_section_type();
 		// --- Update data structure sizes ---
-		if (section_type == 'v') {
+		if (section_type == 'v')
+		{
 			// Read the global variable block
 			Section_GV gvs(file);
 			// Update sequence size if k or max change
 			if (gvs.vars.find("k") != gvs.vars.end()
-				or gvs.vars.find("max") != gvs.vars.end()) {
+				or gvs.vars.find("max") != gvs.vars.end())
+			{
 				// Compute the max size of a sequence
 				this->k = this->file->global_vars["k"];
 				this->max = this->file->global_vars["max"];
-				uint64_t max_size = bytes_from_bit_array(2, max + k - 1);
-				// Allocate the right amount of memory and place the pointers to the right addresses
-				for (uint8_t i=0 ; i<4 ; i++) {
+				uint64_t seq_max_size = bytes_from_bit_array(2, max + k - 1);
+				uint64_t data_max_size = data_size * max;
+				// sequence + data buffer
+				delete[] this->current_seq_data;
+				this->current_seq_data = new uint8_t[seq_max_size + data_max_size];
+				
+				// Shifts
+				this->current_shifts[0] = this->current_seq_data;
+				for (uint8_t i=1 ; i<4 ; i++)
+				{
 					delete[] this->current_shifts[i];
-					this->current_shifts[i] = new uint8_t[max_size];
-					memset(this->current_shifts[i], 0, max_size);
+					this->current_shifts[i] = new uint8_t[seq_max_size];
+					memset(this->current_shifts[i], 0, seq_max_size);
 				}
-				this->current_sequence = this->current_shifts[0];
+
+				// Current kmer
 				delete[] this->current_kmer;
 				this->current_kmer = new uint8_t[k/4 + 1];
 				memset(this->current_kmer, 0, (k/4+1));
@@ -1483,15 +1493,17 @@ void Kff_reader::read_until_first_section_block() {
 
 			// Update the data array size
 			if (gvs.vars.find("data_size") != gvs.vars.end()
-				or gvs.vars.find("max") != gvs.vars.end()) {
-				// Compute the max size of a data array
-				auto data_size = this->file->global_vars["data_size"];
-				this->data_size = data_size;
+				or gvs.vars.find("max") != gvs.vars.end())
+			{
+				// Update global variables
 				this->max = this->file->global_vars["max"];
-				uint64_t max_size = data_size * max;
-				delete[] this->current_data;
-				this->current_data = new uint8_t[max_size];
-				memset(this->current_data, 0, max_size);
+				this->data_size = this->file->global_vars["data_size"];
+				// Update buffer size
+				uint64_t seq_max_size = bytes_from_bit_array(2, max + k - 1);
+				uint64_t data_max_size = this->data_size * max;
+				delete[] this->current_seq_data;
+				this->current_seq_data = new uint8_t[seq_max_size + data_max_size];
+				memset(this->current_seq_data, 0, seq_max_size + data_max_size);
 			}
 		}
 		// Mount data from the files to the datastructures.

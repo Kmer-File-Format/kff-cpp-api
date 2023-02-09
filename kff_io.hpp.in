@@ -565,7 +565,8 @@ private:
 	// Space alocated for copying the current kmer given to the user.
 	uint8_t * current_kmer;
 	// Current sequence
-	uint8_t * current_sequence;
+	uint8_t * current_seq_data;
+	// uint8_t * current_sequence;
 	// Current sequence shifted to match the 4 different alignements
 	uint8_t ** current_shifts;
 	// Size in nucleotides of current sequence
@@ -577,7 +578,7 @@ private:
 	// Number of kmer remaining in the current block
 	uint64_t remaining_kmers;
 	// Data array for the current block
-	uint8_t * current_data;
+	// uint8_t * current_data;
 	// Section currently readed.
 	Block_section_reader * current_section;
 	// Remaining blocks before end of the section
