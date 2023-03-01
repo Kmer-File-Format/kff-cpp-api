@@ -1344,7 +1344,7 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	uint64_t no_mini_size = seq_size - m;
 	uint64_t no_mini_bytes = bytes_from_bit_array(2, no_mini_size);
 	uint64_t no_mini_left_offset = (4 - (no_mini_size % 4)) % 4;
-	// Shift the whole sequence to the left to have np padding on byte 0.
+	// Shift the whole sequence to the left to have no padding on byte 0.
 	leftshift8(seq, no_mini_bytes, no_mini_left_offset*2);
 
 
@@ -1360,7 +1360,6 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	// Shift to the left
 	uint no_mini_suff_offset = no_mini_suff_start_nucl % 4;
 	leftshift8(suffix, no_mini_suff_bytes, no_mini_suff_offset * 2);
-
 
 
 	// Prepare the minimizer
@@ -1379,14 +1378,6 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	uint final_mini_byte_size = (m + final_mini_offset + 3) / 4;
 	rightshift8(mini, seq_bytes, final_mini_offset * 2);
 
-	// Align the suffix with the end of the minimizer
-	uint final_suff_start_nucl = final_mini_start_nucl + m;
-	uint final_suff_start_byte = final_suff_start_nucl / 4;
-	uint final_suff_offset = final_suff_start_nucl % 4;
-	uint final_suff_byte_size = (suff_nucl + final_suff_offset + 3) / 4;
-	rightshift8(suffix, seq_bytes, final_suff_offset * 2);
-
-
 	// Merge minimizer
 	seq[final_mini_start_byte] = fusion8(
 		seq[final_mini_start_byte],
@@ -1397,14 +1388,25 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 		seq[final_mini_start_byte+idx] = mini[idx];
 	}
 
-	// Merge the suffix
-	seq[final_suff_start_byte] = fusion8(
-		seq[final_suff_start_byte],
-		suffix[0],
-		final_suff_offset * 2
-	);
-	for (uint64_t idx=1 ; idx<final_suff_byte_size ; idx++) {
-		seq[final_suff_start_byte+idx] = suffix[idx];
+
+	// Align the suffix with the end of the minimizer
+	uint final_suff_start_nucl = final_mini_start_nucl + m;
+	uint final_suff_start_byte = final_suff_start_nucl / 4;
+	uint final_suff_offset = final_suff_start_nucl % 4;
+	uint final_suff_byte_size = (suff_nucl + final_suff_offset + 3) / 4;
+	if (final_suff_byte_size > 0)
+	{
+		rightshift8(suffix, seq_bytes, final_suff_offset * 2);
+
+		// Merge the suffix
+		seq[final_suff_start_byte] = fusion8(
+			seq[final_suff_start_byte],
+			suffix[0],
+			final_suff_offset * 2
+		);
+		for (uint64_t idx=1 ; idx<final_suff_byte_size ; idx++) {
+			seq[final_suff_start_byte+idx] = suffix[idx];
+		}
 	}
 
 	// Align everything to the right
