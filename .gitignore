@@ -37,6 +37,7 @@ kff_example
 **/CMakeFiles/
 **/Makefile
 **/*.cmake
+build
 
 # aspell files
 **/*.bak
