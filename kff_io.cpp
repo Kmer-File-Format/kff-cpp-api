@@ -704,7 +704,7 @@ Section * SectionBuilder::build(Kff_file * file) {
 			return new Section_Minimizer(file);
 		default:
 			cerr << "Unknown section " << type << "(" << (uint)type << ")" << endl;
-			throw std::runtime_error("Unknown section type" + type);
+			throw std::runtime_error("Unknown section type " + std::string(1, type));
 	}
 }
 
