@@ -79,6 +79,10 @@ void Kff_file::open(string mode) {
 		if (this->file_size == 0 and this->next_free == 0) {
 			// Open the fp
 			this->fs.open(this->filename, fstream::binary | fstream::in);
+			if (this->fs.fail()) {
+				std::string msg = "Cannot open file " + this->filename;
+				throw std::runtime_error(msg);
+			}
 			// Compute the file length
 			long position = this->fs.tellp();
 			this->fs.seekg(0, this->fs.end);
@@ -700,7 +704,7 @@ Section * SectionBuilder::build(Kff_file * file) {
 			return new Section_Minimizer(file);
 		default:
 			cerr << "Unknown section " << type << "(" << (uint)type << ")" << endl;
-			throw std::runtime_error("Unknown section type" + type);
+			throw std::runtime_error("Unknown section type " + std::string(1, type));
 	}
 }
 

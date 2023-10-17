@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 # set the project name
 project(KFF)
 project(KFF VERSION 1.0)
-configure_file(${PROJECT_SOURCE_DIR}/kff_io.hpp.in ${PROJECT_SOURCE_DIR}/kff_io.hpp)
+configure_file(${PROJECT_SOURCE_DIR}/kff_io.hpp.in ${CMAKE_BINARY_DIR}/kff_io.hpp)
 
 # specify the C++ standard
 set(CMAKE_CXX_STANDARD 14)
