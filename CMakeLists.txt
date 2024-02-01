@@ -12,7 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 include_directories(${CMAKE_BINARY_DIR})
 
-set(CMAKE_CXX_FLAGS "-Wall -Ofast -g")
+if (NOT CMAKE_CXX_FLAGS)
+    set(CMAKE_CXX_FLAGS "-Wall -Ofast -g")
+endif()
 
 add_subdirectory("benchmarks")
 
