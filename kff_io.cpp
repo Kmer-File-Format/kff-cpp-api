@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstring>
 #include <sstream>
+#include <cstdint>
 #include <math.h>
 
 #include <map>
