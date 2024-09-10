@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <cstring>
+#include <cstdint>
 #include <map>
 
 #include "kff_io.hpp"
