@@ -4,6 +4,10 @@ cmake_minimum_required(VERSION 3.16)
 project(KFF)
 project(KFF VERSION 1.0)
 configure_file(${PROJECT_SOURCE_DIR}/kff_io.hpp.in ${CMAKE_BINARY_DIR}/kff_io.hpp)
+configure_file(
+    ${PROJECT_SOURCE_DIR}/kff_io.hpp.in
+    ${CMAKE_BINARY_DIR}/kff_io.hpp
+)
 
 # specify the C++ standard
 set(CMAKE_CXX_STANDARD 14)
@@ -22,9 +26,11 @@ add_library(kff kff_io.cpp)
 
 target_include_directories(kff
     PUBLIC
-    .
-    ${PROJECT_SOURCE_DIR}/
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>
+        $<INSTALL_INTERFACE:include>
 )
+
 
 
 # add the executable
