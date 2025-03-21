@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <map>
 #include <vector>
+#include <cstdint>
 
 #ifdef _WIN32
 #include <iso646.h>
