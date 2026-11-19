@@ -13,6 +13,42 @@ Also, the low level API does not guaranty the file integrity.
 It means that if you use the functions in the wrong order, you can write wrong kff files.
 
 
+# Build, install and test
+
+The library is built with CMake (3.16 or newer) and a C++17 compiler. The
+public header `kff_io.hpp` only requires C++11 from the projects using it.
+
+```bash
+cmake -S . -B build              # Release build by default
+cmake --build build -j
+ctest --test-dir build           # unit tests
+cmake --install build --prefix /usr/local
+```
+
+Options (`-DOPTION=ON/OFF`), ON by default when the library is the main
+project and OFF when it is included with `add_subdirectory()`:
+- `KFF_BUILD_TESTS`: unit tests (`build/tests/kff_tests`, run with `ctest`);
+- `KFF_BUILD_EXAMPLES`: the `kff_example` program;
+- `KFF_BUILD_BENCHMARKS`: `reader_bench`;
+- `KFF_INSTALL`: install rules (library, header and CMake package).
+
+`-DBUILD_SHARED_LIBS=ON` builds a shared library (versioned soname).
+
+Use the installed library from another CMake project:
+
+```cmake
+find_package(kff 1.0 REQUIRED)
+target_link_libraries(my_target PRIVATE kff::kff)
+```
+
+or include the sources with `add_subdirectory(kff-cpp-api)` and link to
+`kff` (or `kff::kff`).
+
+The unit tests (`tests/`) check the bytes written for each element of the
+format against the specification, read them back, and cover the reader,
+the index and the write buffer. They have no external dependency.
+
+
 # High level reader API
 
 ## Enumerating kmers
