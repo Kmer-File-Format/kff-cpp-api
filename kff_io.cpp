@@ -18,8 +18,9 @@ using namespace std;
 
 template<typename T>
 void store_big_endian(uint8_t * buff, size_t size, const T& data) {
+	uint64_t value = data;
 	for (int b = size - 1; b >= 0; --b) {
-		*buff++ = data >> (8 * b);
+		*buff++ = value >> (8 * b);
 	}
 }
 
