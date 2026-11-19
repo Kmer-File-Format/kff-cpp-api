@@ -174,3 +174,25 @@ TEST_CASE("variables: the footer is discovered when the file is opened") {
 	// Opening does not move the reading position (first byte after the fixed header)
 	CHECK_EQ(file.read_section_type(), 'v');
 }
+
+TEST_CASE("variables: a variable written twice is declared once") {
+	TempDir dir;
+	std::string name = dir.file("twice.kff");
+	{
+		Kff_file file(name, "w");
+		Section_GV sgv(&file);
+		sgv.write_var("k", 10);
+		sgv.write_var("k", 12);
+		sgv.write_var("max", 1);
+		CHECK_EQ(sgv.nb_vars, (uint64_t)2);
+		sgv.close();
+		file.close();
+	}
+	Kff_file file(name, "r");
+	Section_GV sgv(&file);
+	CHECK_EQ(sgv.nb_vars, (uint64_t)2);
+	CHECK_EQ(sgv.vars.at("k"), (uint64_t)12);
+	CHECK_EQ(sgv.vars.at("max"), (uint64_t)1);
+	// The next section is read correctly
+	CHECK_EQ(file.read_section_type(), 'i');
+}

@@ -240,3 +240,35 @@ TEST_CASE("minimizer: the README example") {
 	CHECK_EQ(sm.read_compacted_sequence(seq.data(), data.data()), (uint64_t)2);
 	CHECK_EQ(decode(seq, 11, encoding), std::string("CTAAACTGATT"));
 }
+
+TEST_CASE("minimizer: the move assignment keeps the field widths of the moved section") {
+	TempDir dir;
+	Random rnd(14);
+	std::string name = dir.file("moved.kff");
+	// Section with 2-byte counters and positions
+	MiniFile mf = write_mini_file(name, rnd, 31, 9, 1000, 1, 10);
+	Kff_file file(name, "r");
+	Section_GV sgv(&file);
+	Section_Minimizer source(&file);
+	{
+		// Target with 1-byte counters and positions
+		TempDir other;
+		Kff_file small(other.file("small.kff"), "w");
+		Section_GV small_sgv(&small);
+		small_sgv.write_var("k", 31);
+		small_sgv.write_var("m", 9);
+		small_sgv.write_var("max", 5);
+		small_sgv.write_var("data_size", 1);
+		small_sgv.close();
+		Section_Minimizer target(&small);
+		target = std::move(source);
+
+		Bytes seq(300), data(1000);
+		for (const Block & block : mf.blocks) {
+			uint64_t nb_kmers = target.read_compacted_sequence(seq.data(), data.data());
+			CHECK_EQ(nb_kmers, block.sequence.size() - 30);
+			CHECK_EQ(decode(seq, block.sequence.size()), block.sequence);
+		}
+		small.close(false);
+	}
+}
