@@ -743,8 +743,9 @@ Section_GV::Section_GV(Kff_file * file) : Section(file) {
 }
 
 void Section_GV::write_var(const string & var_name, uint64_t value) {
-	this->nb_vars += 1;
 	this->vars[var_name] = value;
+	// A variable written twice is stored once
+	this->nb_vars = this->vars.size();
 	this->file->global_vars[var_name] = value;
 }
 
