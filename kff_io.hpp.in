@@ -505,6 +505,8 @@ private:
 
 	uint8_t nb_bytes_mini;
 	uint8_t mini_pos_bytes;
+	// Working space to insert/remove the minimizer (reused between blocks)
+	std::vector<uint8_t> nucleotide_buffer;
 
 	uint32_t read_section_header();
 

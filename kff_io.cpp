@@ -42,9 +42,62 @@ uint64_t bytes_from_bit_array(uint64_t bits_per_elem, uint64_t nb_elem) {
 		return ((bits_per_elem * nb_elem - 1) / 8) + 1;
 }
 
-static void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift);
 static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift);
-static uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index);
+
+
+/* Copy nb nucleotides of src, starting at nucleotide src_pos, into dst at nucleotide dst_pos.
+ * The nucleotide i of an array is stored in the 2 bits 7-2(i%4) and 6-2(i%4) of its byte i/4
+ * (big endian order). The bits of the copied area must be 0 in dst (bitwise or).
+ */
+static void copy_nucleotides(uint8_t * dst, uint64_t dst_pos, const uint8_t * src, uint64_t src_pos, uint64_t nb) {
+	if (nb == 0)
+		return;
+	src += src_pos / 4;
+	dst += dst_pos / 4;
+	const unsigned src_bit = 2 * (src_pos % 4);
+	const unsigned dst_bit = 2 * (dst_pos % 4);
+	const uint64_t bits = 2 * nb;
+	const uint64_t src_bytes = (src_bit + bits + 7) / 8;
+	const uint64_t dst_bytes = (dst_bit + bits + 7) / 8;
+	// Mask of the bits of the last destination byte that are part of the copy
+	const unsigned last_bits = (dst_bit + bits) - 8 * (dst_bytes - 1);
+	const uint8_t last_mask = (uint8_t)(0xFF << (8 - last_bits));
+
+	if (src_bit == dst_bit) {
+		// Same alignment: whole bytes are copied
+		if (dst_bytes == 1) {
+			dst[0] |= src[0] & (0xFF >> dst_bit) & last_mask;
+			return;
+		}
+		dst[0] |= src[0] & (0xFF >> dst_bit);
+		memcpy(dst + 1, src + 1, dst_bytes - 2);
+		dst[dst_bytes - 1] |= src[dst_bytes - 1] & last_mask;
+		return;
+	}
+
+	// 8 bits of the source from the bit p (only the bytes of the source are read)
+	auto get8 = [src, src_bytes](uint64_t p) -> uint8_t {
+		const uint64_t byte = p / 8;
+		const unsigned offset = p % 8;
+		unsigned word = (unsigned)src[byte] << 8;
+		if (offset != 0 and byte + 1 < src_bytes)
+			word |= src[byte + 1];
+		return (uint8_t)(word >> (8 - offset));
+	};
+
+	// First destination byte: bits dst_bit..7 receive the source bits from src_bit
+	uint8_t first = dst_bit > src_bit ? (uint8_t)(get8(0) >> (dst_bit - src_bit)) : get8(src_bit - dst_bit);
+	uint8_t first_mask = 0xFF >> dst_bit;
+	if (dst_bytes == 1)
+		first_mask &= last_mask;
+	dst[0] |= first & first_mask;
+	if (dst_bytes == 1)
+		return;
+	// Following bytes: the destination bit 8j comes from the source bit src_bit + 8j - dst_bit
+	for (uint64_t j = 1; j + 1 < dst_bytes; j++)
+		dst[j] = get8(src_bit + 8 * j - dst_bit);
+	dst[dst_bytes - 1] |= get8(src_bit + 8 * (dst_bytes - 1) - dst_bit) & last_mask;
+}
 
 
 // ----- Open / Close functions -----
@@ -1341,19 +1394,6 @@ void Section_Minimizer::jump_sequence() {
 }
 
 
-/* Bitshift to the left all the bits in the array with a maximum of 7 bits.
- * Overflow on the left will be set into the previous cell.
- */
-static void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
-	assert(bitshift < 8);
-
-	if (length > 0) {
-		for (uint64_t i=0 ; i<length-1 ; i++) {
-			bitarray[i] = (bitarray[i] << bitshift) | (bitarray[i+1] >> (8-bitshift));
-		}
-		bitarray[length-1] <<= bitshift;
-	}
-}
 
 /* Similar to the previous function but on the right */
 static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
@@ -1367,131 +1407,40 @@ static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 	}
 }
 
-/* Fusion to bytes into one.
- * The merge_index higher bits are from left_bits the others from right_bits
- */
-static uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
-	uint8_t mask = 0xFF << (8-merge_index);
-	return (left_bits & mask) | (right_bits & ~mask);
-}
 
 void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
-	// Compute all the bit and byte quantities needed.
-	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
-	uint left_offset_nucl = (4 - seq_size % 4) % 4;
+	// The sequence is copied without its minimizer, right aligned with null padding bits
+	const uint64_t no_mini_size = seq_size - m;
+	const uint64_t seq_offset = (4 - seq_size % 4) % 4;
+	const uint64_t no_mini_offset = (4 - no_mini_size % 4) % 4;
+	this->nucleotide_buffer.assign(bytes_from_bit_array(2, no_mini_size) + 1, 0);
+	uint8_t * no_mini = this->nucleotide_buffer.data();
 
-	// 1 - Prepare space for sequence manipulation
-	uint8_t * seq_copy = new uint8_t[seq_bytes];
-	memcpy(seq_copy, seq, seq_bytes);
-	
-	// 2 - Move the suffix to the bytes where the minimiser started
-	uint mini_start_byte = (mini_pos + left_offset_nucl) / 4;
-	uint suff_start_byte = (mini_pos + m + left_offset_nucl) / 4;
-	uint suff_bytes = seq_bytes-suff_start_byte;
-	for (uint i=0 ; i<suff_bytes ; i++) {
-		seq_copy[mini_start_byte + i] = seq_copy[suff_start_byte + i];
-	}
-
-	// 3 - shift the suffix to align with the minimizer position
-	uint mini_offset = (mini_pos + left_offset_nucl) % 4;
-	uint suff_offset = (mini_pos + m + left_offset_nucl) % 4;
-	if (mini_offset < suff_offset)
-		leftshift8(seq_copy + mini_start_byte, seq_bytes - mini_start_byte, (suff_offset - mini_offset) * 2);
-	else
-		rightshift8(seq_copy + mini_start_byte, seq_bytes - mini_start_byte, (mini_offset - suff_offset) * 2);
-
-	// 4 - fusion the common byte
-	seq_copy[mini_start_byte] = fusion8(seq[mini_start_byte], seq_copy[mini_start_byte], mini_offset * 2);
-
-	// 5 - put all the offset bits on the left
-	leftshift8(seq_copy, seq_bytes, left_offset_nucl * 2);
-	rightshift8(seq_copy, seq_bytes, ((4 - ((seq_size - m) % 4)) % 4) * 2);
+	// Prefix then suffix of the minimizer
+	copy_nucleotides(no_mini, no_mini_offset, seq, seq_offset, mini_pos);
+	copy_nucleotides(no_mini, no_mini_offset + mini_pos, seq, seq_offset + mini_pos + m, seq_size - mini_pos - m);
 
 	// Write the compacted sequence into file.
-	this->write_compacted_sequence_without_mini(seq_copy, seq_size-m, mini_pos, data_array);
-
-	delete[] seq_copy;
+	this->write_compacted_sequence_without_mini(no_mini, no_mini_size, mini_pos, data_array);
 }
 
 
 void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t mini_pos) {
+	const uint64_t seq_size = nb_kmer + k - 1;
+	const uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
+	const uint64_t no_mini_size = seq_size - m;
+	// Padding nucleotides of the result, of the input and of the minimizer
+	const uint64_t seq_offset = (4 - seq_size % 4) % 4;
+	const uint64_t no_mini_offset = (4 - no_mini_size % 4) % 4;
+	const uint64_t mini_offset = (4 - m % 4) % 4;
 
-	uint64_t seq_size = nb_kmer + k - 1;
-	uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
-	uint64_t seq_left_offset = (4 - (seq_size % 4)) % 4;
-	uint64_t no_mini_size = seq_size - m;
-	uint64_t no_mini_bytes = bytes_from_bit_array(2, no_mini_size);
-	uint64_t no_mini_left_offset = (4 - (no_mini_size % 4)) % 4;
-	// Shift the whole sequence to the left to have no padding on byte 0.
-	leftshift8(seq, no_mini_bytes, no_mini_left_offset*2);
-
-
-	// Prepare the suffix
-	uint8_t * suffix = new uint8_t[seq_bytes];
-	memset(suffix, 0, seq_bytes);
-	uint suff_nucl = seq_size - m - mini_pos;
-	// Values inside of seq before any change
-	uint no_mini_suff_start_nucl = mini_pos;
-	uint no_mini_suff_start_byte = no_mini_suff_start_nucl / 4;
-	uint no_mini_suff_bytes = no_mini_bytes - no_mini_suff_start_byte;
-	memcpy(suffix, seq + no_mini_suff_start_byte, no_mini_suff_bytes);
-	// Shift to the left
-	uint no_mini_suff_offset = no_mini_suff_start_nucl % 4;
-	leftshift8(suffix, no_mini_suff_bytes, no_mini_suff_offset * 2);
-
-
-	// Prepare the minimizer
-	uint8_t * mini = new uint8_t[seq_bytes];
-	memset(mini, 0, seq_bytes);
-	memcpy(mini, this->minimizer, nb_bytes_mini);
-	// Shift to the left
-	uint mini_offset = (4 - (m % 4)) % 4;
-	leftshift8(mini, nb_bytes_mini, mini_offset * 2);
-
-
-	// Align the minimizer
-	uint final_mini_start_nucl = mini_pos;
-	uint final_mini_start_byte = mini_pos / 4;
-	uint final_mini_offset = final_mini_start_nucl % 4;
-	uint final_mini_byte_size = (m + final_mini_offset + 3) / 4;
-	rightshift8(mini, seq_bytes, final_mini_offset * 2);
-
-	// Merge minimizer
-	seq[final_mini_start_byte] = fusion8(
-		seq[final_mini_start_byte],
-		mini[0],
-		final_mini_offset * 2
-	);
-	for (uint idx=1 ; idx<final_mini_byte_size ; idx++) {
-		seq[final_mini_start_byte+idx] = mini[idx];
-	}
-
-
-	// Align the suffix with the end of the minimizer
-	uint final_suff_start_nucl = final_mini_start_nucl + m;
-	uint final_suff_start_byte = final_suff_start_nucl / 4;
-	uint final_suff_offset = final_suff_start_nucl % 4;
-	uint final_suff_byte_size = (suff_nucl + final_suff_offset + 3) / 4;
-	if (final_suff_byte_size > 0)
-	{
-		rightshift8(suffix, seq_bytes, final_suff_offset * 2);
-
-		// Merge the suffix
-		seq[final_suff_start_byte] = fusion8(
-			seq[final_suff_start_byte],
-			suffix[0],
-			final_suff_offset * 2
-		);
-		for (uint64_t idx=1 ; idx<final_suff_byte_size ; idx++) {
-			seq[final_suff_start_byte+idx] = suffix[idx];
-		}
-	}
-
-	// Align everything to the right
-	rightshift8(seq, seq_bytes, seq_left_offset * 2);
-
-	delete[] suffix;
-	delete[] mini;
+	// The full sequence is built right aligned with null padding bits
+	this->nucleotide_buffer.assign(seq_bytes, 0);
+	uint8_t * full = this->nucleotide_buffer.data();
+	copy_nucleotides(full, seq_offset, seq, no_mini_offset, mini_pos);
+	copy_nucleotides(full, seq_offset + mini_pos, this->minimizer, mini_offset, m);
+	copy_nucleotides(full, seq_offset + mini_pos + m, seq, no_mini_offset + mini_pos, no_mini_size - mini_pos);
+	memcpy(seq, full, seq_bytes);
 }
 
 
