@@ -73,6 +73,22 @@ public:
 	void index_discovery();
 	void read_index(long position);
 
+	// --- Read cache (reading mode) ---
+	// Cache of the part of the file stored on disk. Reads and jumps are done
+	// in memory, the stream is only used to refill the cache.
+	std::vector<uint8_t> read_cache;
+	// Position in the file of the first byte of the cache, and valid bytes
+	unsigned long read_cache_start = 0;
+	unsigned long read_cache_size = 0;
+	/** Reads size bytes at position from the file on disk */
+	void disk_read(uint8_t * bytes, unsigned long size, unsigned long position);
+	/** Loads the cache from position */
+	void fill_read_cache(unsigned long position);
+	/** Read path when the bytes are not all in the cache */
+	void read_uncached(uint8_t * bytes, unsigned long size);
+	/** Byte at the current position (0 at the end of the file), the position is not changed */
+	uint8_t peek_byte();
+
 public:
 	std::string filename;
 	uint8_t major_version;

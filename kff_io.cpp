@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <math.h>
 
+#include <algorithm>
 #include <map>
 #include <vector>
 
@@ -81,6 +82,8 @@ Kff_file::Kff_file(const string filename, const string mode) {
 void Kff_file::open(string mode) {
 	this->writing_started = false;
 	this->current_position = 0;
+	this->read_cache_start = 0;
+	this->read_cache_size = 0;
 
 	// Determine the mode and open the file
 	if (mode[0] == 'w') {
@@ -218,7 +221,10 @@ void Kff_file::close(bool write_buffer) {
 			this->fs.close();
 	}
 	else if (this->is_reader) {
-		
+		// Release the read cache (the object can stay alive a long time, e.g. in merge)
+		std::vector<uint8_t>().swap(this->read_cache);
+		this->read_cache_start = 0;
+		this->read_cache_size = 0;
 	}
 
 	this->tmp_closed = false;
@@ -319,7 +325,7 @@ void Kff_file::index_discovery() {
 
 	// Search first section
 	if (not this->indexed) {
-		char type = this->fs.peek();
+		char type = (char)this->peek_byte();
 		if (type == 'i') {
 			this->indexed = true;
 			this->read_index(this->tellp());
@@ -356,51 +362,102 @@ void Kff_file::read_index(long position) {
 }
 
 
+// Size of the read cache. Moderate because a reader is created for each input file of a merge.
+static const unsigned long READ_CACHE_CAPACITY = 1 << 16; // 64 KB
+
 void Kff_file::read(uint8_t * bytes, unsigned long size) {
 	if (not this->is_reader) {
 		cerr << "Cannot read a file in writing mode." << endl;
 		exit(1);
 	}
 
-	// Read in the file
-	if (this->current_position < this->file_size) {
-		// Read the end of the file and the beginning of the buffer
-		if (this->current_position + size > this->file_size) {
-			uint64_t fs_read_size = this->file_size - this->current_position;
-			this->read(bytes, fs_read_size);
-			this->read(bytes + fs_read_size, size - fs_read_size);
-			return;
-		}
-		// Read inside of the file
-		else {
-			// File not opened
-			if (not this->fs.is_open())
-				this->fs.open(this->filename, fstream::binary | fstream::in);
+	// Fast path: all the bytes are in the read cache
+	if (this->current_position >= this->read_cache_start and
+		this->current_position + size <= this->read_cache_start + this->read_cache_size) {
+		if (size > 0)
+			memcpy(bytes, this->read_cache.data() + (this->current_position - this->read_cache_start), size);
+		this->current_position += size;
+		return;
+	}
 
-			// long tp = this->fs.tellp();
-			this->fs.read((char *)bytes, size);
-			if (this->fs.fail()) {
-				// cout << tp << endl;
-				cerr << "Impossible to read the file " << this->filename << " on disk." << endl;
-				exit(1);
-			}
+	this->read_uncached(bytes, size);
+}
+
+void Kff_file::read_uncached(uint8_t * bytes, unsigned long size) {
+	// Part of the bytes stored in the file on disk
+	while (size > 0 and this->current_position < this->file_size) {
+		const unsigned long cache_end = this->read_cache_start + this->read_cache_size;
+		if (this->current_position >= this->read_cache_start and this->current_position < cache_end) {
+			// Copy what is available in the cache
+			unsigned long nb = std::min(size, cache_end - this->current_position);
+			memcpy(bytes, this->read_cache.data() + (this->current_position - this->read_cache_start), nb);
+			bytes += nb;
+			size -= nb;
+			this->current_position += nb;
+		} else if (size >= READ_CACHE_CAPACITY) {
+			// Large reads bypass the cache
+			unsigned long nb = std::min(size, this->file_size - this->current_position);
+			this->disk_read(bytes, nb, this->current_position);
+			bytes += nb;
+			size -= nb;
+			this->current_position += nb;
+		} else {
+			this->fill_read_cache(this->current_position);
 		}
 	}
-	// Read in the buffer
-	else {
-		// Compute the buffer positions to read
+
+	// Part of the bytes in the memory buffer (file not entirely written on disk)
+	if (this->current_position >= this->file_size) {
 		uint64_t buffer_position = this->current_position - this->file_size;
 		if (buffer_position + size > this->next_free) {
 			string error = string("Read out of the file, Byte ") + to_string(this->file_size + this->next_free);
 			throw out_of_range(error);
-			exit(1);
 		}
 
 		if (size > 0)
 			memcpy(bytes, this->file_buffer + buffer_position, size);
+		this->current_position += size;
 	}
-	
-	this->current_position += size;
+}
+
+void Kff_file::disk_read(uint8_t * bytes, unsigned long size, unsigned long position) {
+	// File not opened
+	if (not this->fs.is_open())
+		this->fs.open(this->filename, fstream::binary | fstream::in);
+
+	this->fs.seekg(position);
+	this->fs.read((char *)bytes, size);
+	if (this->fs.fail()) {
+		cerr << "Impossible to read the file " << this->filename << " on disk." << endl;
+		exit(1);
+	}
+}
+
+void Kff_file::fill_read_cache(unsigned long position) {
+	if (this->read_cache.size() < READ_CACHE_CAPACITY)
+		this->read_cache.resize(READ_CACHE_CAPACITY);
+
+	unsigned long nb = std::min(READ_CACHE_CAPACITY, this->file_size - position);
+	// Invalidate the cache before reading (disk_read can stop the program)
+	this->read_cache_size = 0;
+	this->disk_read(this->read_cache.data(), nb, position);
+	this->read_cache_start = position;
+	this->read_cache_size = nb;
+}
+
+uint8_t Kff_file::peek_byte() {
+	// Byte on disk
+	if (this->current_position < this->file_size) {
+		if (this->current_position < this->read_cache_start or
+			this->current_position >= this->read_cache_start + this->read_cache_size)
+			this->fill_read_cache(this->current_position);
+		return this->read_cache[this->current_position - this->read_cache_start];
+	}
+	// Byte in the memory buffer
+	if (this->current_position < this->file_size + this->next_free)
+		return this->file_buffer[this->current_position - this->file_size];
+	// End of the file
+	return 0;
 }
 
 void Kff_file::write(const uint8_t * bytes, unsigned long size) {
@@ -533,7 +590,12 @@ void Kff_file::jump_to(unsigned long position, bool from_end) {
 	if (from_end) {
 		position = this->file_size + this->next_free - position;
 	}
-	// cout << "position " << position << endl;
+
+	// In reading mode, the read cache is used: the stream is moved only when the cache is refilled
+	if (this->is_reader) {
+		this->current_position = position;
+		return;
+	}
 
 	// Jump into the written file
 	if (position < this->file_size) {
@@ -682,12 +744,7 @@ char Kff_file::read_section_type() {
 		this->complete_header();
 	}
 
-	if (this->current_position < this->file_size) {
-		return this->fs.peek();
-	}
-	else {
-		return (char)this->file_buffer[this->current_position - this->file_size];
-	}
+	return (char)this->peek_byte();
 }
 
 
