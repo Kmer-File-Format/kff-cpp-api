@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstring>
 #include <sstream>
+#include <stdexcept>
 #include <cstdint>
 #include <math.h>
 
@@ -580,10 +581,9 @@ void Kff_file::write_encoding(uint8_t a, uint8_t c, uint8_t g, uint8_t t) {
 	// Value masking
 	a &= 0b11; c &= 0b11; g &= 0b11; t &= 0b11;
 
-	// Verification of the differences.
-	assert(a != c); assert(a != g); assert(a != t);
-	assert(c != g); assert(g != t);
-	assert(g != t);
+	// Verification of the differences (explicit check: must not depend on NDEBUG).
+	if (a == c or a == g or a == t or c == g or c == t or g == t)
+		throw std::invalid_argument("Wrong encoding. The 4 2-bits values must be different.");
 
 	// set values
 	this->encoding[0] = a;
