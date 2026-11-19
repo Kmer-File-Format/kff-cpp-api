@@ -1139,7 +1139,8 @@ Section_Minimizer& Section_Minimizer::operator= ( Section_Minimizer && sm) {
 	data_size = sm.data_size;
 
 	this->remaining_blocks = sm.remaining_blocks;
-	this->nb_kmers_bytes = nb_kmers_bytes;
+	this->nb_kmers_bytes = sm.nb_kmers_bytes;
+	this->mini_pos_bytes = sm.mini_pos_bytes;
 
 	nb_bytes_mini = sm.nb_bytes_mini;
 	std::swap(minimizer, sm.minimizer);
