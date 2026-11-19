@@ -1601,6 +1601,11 @@ void Kff_reader::read_until_first_section_block() {
 		} else {
 			current_section = Block_section_reader::construct_section(file);
 			remaining_blocks = current_section->nb_blocks;
+			// Sections without block are skipped
+			if (remaining_blocks == 0) {
+				delete current_section;
+				current_section = NULL;
+			}
 		}
 	}
 }
