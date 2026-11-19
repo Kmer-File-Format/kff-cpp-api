@@ -6,6 +6,7 @@ add_executable(kff_tests
     test_minimizer.cpp
     test_index.cpp
     test_reader.cpp
+    test_file.cpp
 )
 target_link_libraries(kff_tests PRIVATE kff)
 target_compile_features(kff_tests PRIVATE cxx_std_17)
