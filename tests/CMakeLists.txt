@@ -4,6 +4,7 @@ add_executable(kff_tests
     test_variables.cpp
     test_raw.cpp
     test_minimizer.cpp
+    test_index.cpp
 )
 target_link_libraries(kff_tests PRIVATE kff)
 target_compile_features(kff_tests PRIVATE cxx_std_17)
