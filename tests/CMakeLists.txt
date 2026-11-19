@@ -4,6 +4,7 @@ add_executable(kff_tests
     test_variables.cpp
     test_raw.cpp
     test_minimizer.cpp
+    test_minimizer_reference.cpp
     test_index.cpp
     test_reader.cpp
     test_file.cpp
