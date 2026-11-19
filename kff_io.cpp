@@ -1612,10 +1612,14 @@ void Kff_reader::read_until_first_section_block() {
 				memset(this->current_seq_data, 0, seq_max_size + data_max_size);
 			}
 		}
-		// Mount data from the files to the datastructures.
+		// Index sections are not needed to enumerate the kmers: jump over them
+		// without loading their content.
 		else if (section_type == 'i') {
-			Section_Index index(file);
-			index.close();
+			uint8_t buff[9];
+			file->read(buff, 9);
+			uint64_t nb_entries = 0;
+			load_big_endian(buff + 1, 8, nb_entries);
+			file->jump(9 * nb_entries + 8);
 		} else {
 			current_section = Block_section_reader::construct_section(file);
 			remaining_blocks = current_section->nb_blocks;
