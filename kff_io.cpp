@@ -64,8 +64,18 @@ Kff_file::Kff_file(const string filename, const string mode) {
 	this->file_buffer = new uint8_t[this->buffer_size];
 	this->file_size = 0;
 	this->delete_on_destruction = false;
+	this->footer = nullptr;
 
-	this->open(mode);
+	try {
+		this->open(mode);
+	} catch (...) {
+		// The destructor is not called when the constructor throws
+		delete[] this->file_buffer;
+		delete this->footer;
+		for (Section_Index * si : this->index)
+			delete si;
+		throw;
+	}
 }
 
 void Kff_file::open(string mode) {
