@@ -5,5 +5,5 @@ add_executable(reader_bench
 )
 
 target_link_libraries(reader_bench
-    kff
+    PRIVATE kff
 )

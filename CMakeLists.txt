@@ -10,6 +10,9 @@ else()
     set(KFF_IS_TOP_LEVEL OFF)
 endif()
 
+option(KFF_BUILD_EXAMPLES "Build the kff_example program" ${KFF_IS_TOP_LEVEL})
+option(KFF_BUILD_BENCHMARKS "Build the benchmark programs" ${KFF_IS_TOP_LEVEL})
+
 # Optimised build by default (a parent project keeps control of its own type)
 if (KFF_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -40,13 +43,11 @@ target_include_directories(kff
         $<INSTALL_INTERFACE:include>
 )
 
-add_subdirectory("benchmarks")
+if (KFF_BUILD_BENCHMARKS)
+    add_subdirectory("benchmarks")
+endif()
 
-# add the executable
-add_executable(kff_example
-    main.cpp
-)
-
-target_link_libraries(kff_example
-    kff
-)
+if (KFF_BUILD_EXAMPLES)
+    add_executable(kff_example main.cpp)
+    target_link_libraries(kff_example PRIVATE kff)
+endif()
