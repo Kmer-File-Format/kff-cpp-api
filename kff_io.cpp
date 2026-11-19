@@ -267,31 +267,31 @@ void Kff_file::complete_header() {
 void Kff_file::footer_discovery() {
 	long current_pos = this->tellp();
 
-	// Look at the footer
-	this->jump_to(23, true);
-	// Try to extract the footer size
-	stringstream ss;
-	char c = 'o';
-	for (uint i=0 ; i<11 ; i++) {
-		this->read((uint8_t *)&c, 1);
-		ss << c;
+	// Look at the footer: the file ends with "footer_size\0" + 8 bytes + "KFF".
+	// The footer is optional, small files cannot contain one.
+	bool footer_present = false;
+	if (this->file_size + this->next_free >= 23) {
+		this->jump_to(23, true);
+		char name[11];
+		this->read((uint8_t *)name, 11);
+		footer_present = memcmp(name, "footer_size", 11) == 0;
 	}
-	if (ss.str().compare("footer_size") != 0) {
-		return;
+
+	if (footer_present) {
+		this->jump(1); // remove the '\0'
+
+		uint64_t size = 0;
+		uint8_t buff[8];
+		this->read(buff, 8);
+		load_big_endian(buff, 8, size);
+		// Jump to value section start
+		this->jump_to(size+3, true);
+
+		this->footer = new Section_GV(this);
+		this->footer->close();
 	}
-	this->jump(1); // remove the '\0'
 
-	uint64_t size = 0;
-	uint8_t buff[8];
-	this->read(buff, 8);
-	load_big_endian(buff, 8, size);
-	// Jump to value section start
-	this->jump_to(size+3, true);
-
-	this->footer = new Section_GV(this);
-	this->footer->close();
 	this->footer_discovery_ended = true;
-
 	this->jump_to(current_pos);
 }
 
