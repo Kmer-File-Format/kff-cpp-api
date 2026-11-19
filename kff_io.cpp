@@ -947,12 +947,22 @@ Section_Index::Section_Index(Kff_file * file) : Section(file) {
 		uint64_t nb_vars;
 		this->file->read(buff, 8);
 		load_big_endian(buff, 8, nb_vars);
-		for (uint64_t i=0 ; i<nb_vars ; i++) {
-			int64_t idx = 0;
-			this->file->read((uint8_t *)&type, 1);
-			this->file->read(buff, 8);
-			load_big_endian(buff, 8, idx);
-			this->index[idx] = type;
+
+		// Entries (1 byte type + 8 bytes position) are read by chunks. They are usually
+		// sorted by position: the end of the map is a good insertion hint.
+		const uint64_t entry_size = 9;
+		const uint64_t chunk_entries = 4096;
+		std::vector<uint8_t> entries(std::min(nb_vars, chunk_entries) * entry_size);
+		for (uint64_t first=0 ; first<nb_vars ; first+=chunk_entries) {
+			const uint64_t nb_entries = std::min(chunk_entries, nb_vars - first);
+			this->file->read(entries.data(), nb_entries * entry_size);
+			for (uint64_t i=0 ; i<nb_entries ; i++) {
+				uint8_t * entry = entries.data() + i * entry_size;
+				int64_t idx = 0;
+				load_big_endian(entry + 1, 8, idx);
+				// Same behaviour as index[idx] = type (the last value wins)
+				this->index.emplace_hint(this->index.end(), idx, (char)entry[0])->second = (char)entry[0];
+			}
 		}
 
 		if (nb_vars != this->index.size())
