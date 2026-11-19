@@ -274,7 +274,7 @@ class Section {
 		 * 
 		 * @param file The file where to copy the section
 		 **/
-		virtual void copy(Kff_file * file) {};
+		virtual void copy(Kff_file * /*file*/) {};
 		void close();
 };
 
@@ -364,7 +364,7 @@ public:
 	 *
 	 * @return The number of kmers in the sequence.
 	 */
-	virtual uint64_t read_compacted_sequence(uint8_t* seq, uint8_t* data) {return 0;}
+	virtual uint64_t read_compacted_sequence(uint8_t* /*seq*/, uint8_t* /*data*/) {return 0;}
 	/**
 	 * Read the next block of the section.
 	 * The sequence of the block is pushed in the seq_data array, immediatly followed by data.
@@ -375,7 +375,7 @@ public:
 	 *
 	 * @return The number of kmers in the sequence.
 	 */
-	virtual uint64_t read_compacted_sequence(uint8_t* seq_data) {return 0;}
+	virtual uint64_t read_compacted_sequence(uint8_t* /*seq_data*/) {return 0;}
 	/**
 	 * Jumb over the next block of the section.
 	 */

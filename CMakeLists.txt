@@ -1,7 +1,20 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.16...3.31)
 
 # set the project name
-project(KFF VERSION 1.0)
+project(KFF VERSION 1.0 LANGUAGES CXX)
+
+# True when this directory is the main project (not added by add_subdirectory)
+if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(KFF_IS_TOP_LEVEL ON)
+else()
+    set(KFF_IS_TOP_LEVEL OFF)
+endif()
+
+# Optimised build by default (a parent project keeps control of its own type)
+if (KFF_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
 
 # The generated header is placed in this project's build directory, so that
 # the library also works when it is included with add_subdirectory().
@@ -10,18 +23,15 @@ configure_file(
     ${PROJECT_BINARY_DIR}/kff_io.hpp
 )
 
-# specify the C++ standard
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-# set(CMAKE_BUILD_TYPE Debug)
-
-if (NOT CMAKE_CXX_FLAGS)
-    set(CMAKE_CXX_FLAGS "-Wall -Ofast -g")
-endif()
-
-add_subdirectory("benchmarks")
-
 add_library(kff kff_io.cpp)
+add_library(kff::kff ALIAS kff)
+
+# The library is compiled in C++17; the public header only needs C++11.
+target_compile_features(kff PRIVATE cxx_std_17 INTERFACE cxx_std_11)
+set_target_properties(kff PROPERTIES CXX_EXTENSIONS OFF)
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(kff PRIVATE -Wall -Wextra)
+endif()
 
 target_include_directories(kff
     PUBLIC
@@ -30,7 +40,7 @@ target_include_directories(kff
         $<INSTALL_INTERFACE:include>
 )
 
-
+add_subdirectory("benchmarks")
 
 # add the executable
 add_executable(kff_example
