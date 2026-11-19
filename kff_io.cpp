@@ -45,6 +45,29 @@ uint64_t bytes_from_bit_array(uint64_t bits_per_elem, uint64_t nb_elem) {
 static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift);
 
 
+/* Value of the nb last nucleotides of a right aligned sequence (nb <= 32).
+ * The padding bits are ignored. */
+static inline uint64_t load_nucleotides(const uint8_t * seq, uint64_t nb) {
+	uint64_t value = 0;
+	for (uint64_t i=0 ; i<(nb + 3) / 4 ; i++)
+		value = (value << 8) | seq[i];
+	return nb >= 32 ? value : value & ((uint64_t(1) << (2 * nb)) - 1);
+}
+
+/* Writes a value of nb nucleotides (nb <= 32) right aligned in (nb + 3) / 4 bytes. */
+static inline void store_nucleotides(uint8_t * seq, uint64_t nb, uint64_t value) {
+	for (uint64_t i=(nb + 3) / 4 ; i>0 ; i--) {
+		seq[i - 1] = (uint8_t)value;
+		value >>= 8;
+	}
+}
+
+/* Left shift of nb nucleotides, 0 when all the bits are shifted out. */
+static inline uint64_t shift_nucleotides(uint64_t value, uint64_t nb) {
+	return nb >= 32 ? 0 : value << (2 * nb);
+}
+
+
 /* Copy nb nucleotides of src, starting at nucleotide src_pos, into dst at nucleotide dst_pos.
  * The nucleotide i of an array is stored in the 2 bits 7-2(i%4) and 6-2(i%4) of its byte i/4
  * (big endian order). The bits of the copied area must be 0 in dst (bitwise or).
@@ -1421,14 +1444,23 @@ static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
 	// The sequence is copied without its minimizer, right aligned with null padding bits
 	const uint64_t no_mini_size = seq_size - m;
-	const uint64_t seq_offset = (4 - seq_size % 4) % 4;
-	const uint64_t no_mini_offset = (4 - no_mini_size % 4) % 4;
 	this->nucleotide_buffer.assign(bytes_from_bit_array(2, no_mini_size) + 1, 0);
 	uint8_t * no_mini = this->nucleotide_buffer.data();
 
-	// Prefix then suffix of the minimizer
-	copy_nucleotides(no_mini, no_mini_offset, seq, seq_offset, mini_pos);
-	copy_nucleotides(no_mini, no_mini_offset + mini_pos, seq, seq_offset + mini_pos + m, seq_size - mini_pos - m);
+	if (seq_size <= 32) {
+		// Short sequences: 64 bits arithmetic
+		const uint64_t suffix_size = seq_size - mini_pos - m;
+		const uint64_t full = load_nucleotides(seq, seq_size);
+		const uint64_t suffix = full & (shift_nucleotides(1, suffix_size) - 1);
+		const uint64_t prefix = mini_pos == 0 ? 0 : full >> (2 * (suffix_size + m));
+		store_nucleotides(no_mini, no_mini_size, shift_nucleotides(prefix, suffix_size) | suffix);
+	} else {
+		// Prefix then suffix of the minimizer
+		const uint64_t seq_offset = (4 - seq_size % 4) % 4;
+		const uint64_t no_mini_offset = (4 - no_mini_size % 4) % 4;
+		copy_nucleotides(no_mini, no_mini_offset, seq, seq_offset, mini_pos);
+		copy_nucleotides(no_mini, no_mini_offset + mini_pos, seq, seq_offset + mini_pos + m, seq_size - mini_pos - m);
+	}
 
 	// Write the compacted sequence into file.
 	this->write_compacted_sequence_without_mini(no_mini, no_mini_size, mini_pos, data_array);
@@ -1439,6 +1471,19 @@ void Section_Minimizer::add_minimizer(uint64_t nb_kmer, uint8_t * seq, uint64_t 
 	const uint64_t seq_size = nb_kmer + k - 1;
 	const uint64_t seq_bytes = bytes_from_bit_array(2, seq_size);
 	const uint64_t no_mini_size = seq_size - m;
+
+	if (seq_size <= 32) {
+		// Short sequences: 64 bits arithmetic
+		const uint64_t suffix_size = no_mini_size - mini_pos;
+		const uint64_t no_mini = load_nucleotides(seq, no_mini_size);
+		const uint64_t suffix = no_mini & (shift_nucleotides(1, suffix_size) - 1);
+		const uint64_t prefix = mini_pos == 0 ? 0 : no_mini >> (2 * suffix_size);
+		const uint64_t mini = load_nucleotides(this->minimizer, m);
+		const uint64_t full = shift_nucleotides(prefix, suffix_size + m) | shift_nucleotides(mini, suffix_size) | suffix;
+		store_nucleotides(seq, seq_size, full);
+		return;
+	}
+
 	// Padding nucleotides of the result, of the input and of the minimizer
 	const uint64_t seq_offset = (4 - seq_size % 4) % 4;
 	const uint64_t no_mini_offset = (4 - no_mini_size % 4) % 4;
