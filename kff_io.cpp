@@ -396,7 +396,8 @@ void Kff_file::read(uint8_t * bytes, unsigned long size) {
 			exit(1);
 		}
 
-		memcpy(bytes, this->file_buffer + buffer_position, size);
+		if (size > 0)
+			memcpy(bytes, this->file_buffer + buffer_position, size);
 	}
 	
 	this->current_position += size;
@@ -430,7 +431,8 @@ void Kff_file::write(const uint8_t * bytes, unsigned long size) {
 
 	// fill the buffer
 	if (buff_space >= size) {
-		memcpy(this->file_buffer + this->next_free, bytes, size);
+		if (size > 0)
+			memcpy(this->file_buffer + this->next_free, bytes, size);
 		this->next_free += size;
 	}
 	// Not enought space, write the file
