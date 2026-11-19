@@ -13,6 +13,7 @@ endif()
 option(KFF_BUILD_EXAMPLES "Build the kff_example program" ${KFF_IS_TOP_LEVEL})
 option(KFF_BUILD_BENCHMARKS "Build the benchmark programs" ${KFF_IS_TOP_LEVEL})
 option(KFF_INSTALL "Generate the install rules" ${KFF_IS_TOP_LEVEL})
+option(KFF_BUILD_TESTS "Build the unit tests (run them with ctest)" ${KFF_IS_TOP_LEVEL})
 
 # Optimised build by default (a parent project keeps control of its own type)
 if (KFF_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -79,6 +80,11 @@ if (KFF_INSTALL)
         ${PROJECT_BINARY_DIR}/kffConfigVersion.cmake
         DESTINATION ${KFF_CMAKE_DIR}
     )
+endif()
+
+if (KFF_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
 if (KFF_BUILD_BENCHMARKS)

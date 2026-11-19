@@ -1,0 +1,10 @@
+add_executable(kff_tests
+    main.cpp
+)
+target_link_libraries(kff_tests PRIVATE kff)
+target_compile_features(kff_tests PRIVATE cxx_std_17)
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(kff_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_test(NAME kff_tests COMMAND kff_tests)
