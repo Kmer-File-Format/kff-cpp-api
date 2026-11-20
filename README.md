@@ -44,6 +44,16 @@ target_link_libraries(my_target PRIVATE kff::kff)
 or include the sources with `add_subdirectory(kff-cpp-api)` and link to
 `kff` (or `kff::kff`).
 
+## Versions
+
+Two version numbers are defined in `kff_io.hpp`:
+- the version of the KFF format (`KFF_FORMAT_VERSION_MAJOR`, `KFF_FORMAT_VERSION_MINOR`): it is
+  written in the header of the files, and the files of a higher version are not read. It only
+  changes with the format. `KFF_VERSION_MAJOR` and `KFF_VERSION_MINOR` are its former names.
+- the version of the library (`KFF_API_VERSION_MAJOR`, `KFF_API_VERSION_MINOR`): it is also the
+  version of the CMake package and of the shared library. Its major number changes when the
+  interface is no longer compatible.
+
 The unit tests (`tests/`) check the bytes written for each element of the
 format against the specification, read them back, and cover the reader,
 the index and the write buffer. They have no external dependency.
@@ -147,8 +157,8 @@ Here is an example code to explore both of them:
 
 ### Header
 
-When you open a file to read it, the software version is automatically read and compared to the file version.
-The software version must be equal or greater than the file version.
+When you open a file to read it, the version of the format of the file is automatically read and compared to the version of the format of the library (`KFF_FORMAT_VERSION_MAJOR` and `KFF_FORMAT_VERSION_MINOR`).
+The library reads the files up to its version of the format.
 
 The encoding of the nucleotides is also automatically read.
 It is accessible via the file property *encoding*.
@@ -346,7 +356,7 @@ NB: All the directories of the path to the file that you want to create must alr
 
 ### Header
 
-The header first contains the kff file version. This 2 Bytes value is automatically added by the API at the beginning of the file.
+The header first contains the version of the format of the file (`KFF_FORMAT_VERSION_MAJOR` and `KFF_FORMAT_VERSION_MINOR`). This 2 Bytes value is automatically added by the API at the beginning of the file.
 Then you have to write the encoding that you use using one of the *write_encoding* functions.
 If you want, you can finish the header by adding some metadata (Byte array format).
 If you do not set any metadata, the API will automatically create a 0 Byte metadata field.

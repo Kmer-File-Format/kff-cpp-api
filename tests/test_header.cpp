@@ -19,7 +19,7 @@ TEST_CASE("header: default header of a new file") {
 	}
 	Bytes bytes = read_file(name);
 	// Signature, version, default encoding (A=0 C=1 G=3 T=2), flags, empty metadata
-	Bytes expected = {'K', 'F', 'F', KFF_VERSION_MAJOR, KFF_VERSION_MINOR, 0x1e, 0, 0, 0, 0, 0, 0};
+	Bytes expected = {'K', 'F', 'F', KFF_FORMAT_VERSION_MAJOR, KFF_FORMAT_VERSION_MINOR, 0x1e, 0, 0, 0, 0, 0, 0};
 	// Index with 0 sections
 	expected += Bytes{'i'};
 	expected += big_endian(0, 8);
@@ -56,8 +56,8 @@ TEST_CASE("header: encodings, flags and metadata round trip") {
 			CHECK_EQ(file.encoding[i], encoding[i]);
 		CHECK_EQ(file.uniqueness, unique);
 		CHECK_EQ(file.canonicity, canonical);
-		CHECK_EQ(file.major_version, (uint8_t)KFF_VERSION_MAJOR);
-		CHECK_EQ(file.minor_version, (uint8_t)KFF_VERSION_MINOR);
+		CHECK_EQ(file.major_version, (uint8_t)KFF_FORMAT_VERSION_MAJOR);
+		CHECK_EQ(file.minor_version, (uint8_t)KFF_FORMAT_VERSION_MINOR);
 		CHECK_EQ(file.metadata_size, (uint32_t)metadata.size());
 		Bytes read(file.metadata_size);
 		file.read_metadata(read.data());
@@ -129,17 +129,35 @@ TEST_CASE("header: missing signatures are detected") {
 	CHECK_THROWS_AS(Kff_file(dir.file("end.kff"), "r"), const char *);
 }
 
+TEST_CASE("header: the files are written in the version 1.0 of the format") {
+	// The version of the format only changes with the format, not with the version of the library
+	CHECK_EQ(KFF_FORMAT_VERSION_MAJOR, 1);
+	CHECK_EQ(KFF_FORMAT_VERSION_MINOR, 0);
+	// Former names of the version of the format
+	CHECK_EQ(KFF_VERSION_MAJOR, KFF_FORMAT_VERSION_MAJOR);
+	CHECK_EQ(KFF_VERSION_MINOR, KFF_FORMAT_VERSION_MINOR);
+	TempDir dir;
+	std::string name = dir.file("version.kff");
+	{
+		Kff_file file(name, "w");
+		file.close();
+	}
+	Bytes bytes = read_file(name);
+	CHECK_EQ(bytes[3], (uint8_t)1);
+	CHECK_EQ(bytes[4], (uint8_t)0);
+}
+
 TEST_CASE("header: files from a newer format version are rejected") {
 	TempDir dir;
 	Bytes bytes = valid_file_bytes(dir);
 
 	Bytes major = bytes;
-	major[3] = KFF_VERSION_MAJOR + 1;
+	major[3] = KFF_FORMAT_VERSION_MAJOR + 1;
 	write_file(dir.file("major.kff"), major);
 	CHECK_THROWS_AS(Kff_file(dir.file("major.kff"), "r"), const char *);
 
 	Bytes minor = bytes;
-	minor[4] = KFF_VERSION_MINOR + 1;
+	minor[4] = KFF_FORMAT_VERSION_MINOR + 1;
 	write_file(dir.file("minor.kff"), minor);
 	CHECK_THROWS_AS(Kff_file(dir.file("minor.kff"), "r"), const char *);
 }

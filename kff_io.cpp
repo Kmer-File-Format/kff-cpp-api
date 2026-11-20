@@ -199,7 +199,7 @@ void Kff_file::open(string mode) {
 		uint8_t default_encoding = 0b00011110;
 		// Signature
 		uint8_t buff[] = {	'K', 'F', 'F',
-							KFF_VERSION_MAJOR, KFF_VERSION_MINOR,
+							KFF_FORMAT_VERSION_MAJOR, KFF_FORMAT_VERSION_MINOR,
 							default_encoding,
 							0 /*uniqueness*/, 0 /*canonicity*/
 						};
@@ -223,8 +223,8 @@ void Kff_file::open(string mode) {
 		// Version reading
 		this->read(&this->major_version, 1);
 		this->read(&this->minor_version, 1);
-		if (KFF_VERSION_MAJOR < this->major_version or (KFF_VERSION_MAJOR == this->major_version and KFF_VERSION_MINOR < this->minor_version)) {
-			cerr << "The software version " << (uint)KFF_VERSION_MAJOR << "." << (uint)KFF_VERSION_MINOR << " can't read files writen in version " << (uint)this->major_version << "." << (uint)this->minor_version << endl;
+		if (KFF_FORMAT_VERSION_MAJOR < this->major_version or (KFF_FORMAT_VERSION_MAJOR == this->major_version and KFF_FORMAT_VERSION_MINOR < this->minor_version)) {
+			cerr << "This library (kff-cpp-api " << KFF_API_VERSION_MAJOR << "." << KFF_API_VERSION_MINOR << ") reads the KFF format up to version " << KFF_FORMAT_VERSION_MAJOR << "." << KFF_FORMAT_VERSION_MINOR << ": it can't read files written in version " << (uint)this->major_version << "." << (uint)this->minor_version << endl;
 			throw "Unexpected version number";
 		}
 		// Encoding load

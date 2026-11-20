@@ -163,7 +163,7 @@ inline size_t bytes_for_max(uint64_t max) {
 
 inline Bytes header_bytes(const uint8_t encoding[4] = DEFAULT_ENCODING, bool unique = false,
                           bool canonical = false, const Bytes & metadata = Bytes()) {
-	Bytes b = {'K', 'F', 'F', KFF_VERSION_MAJOR, KFF_VERSION_MINOR,
+	Bytes b = {'K', 'F', 'F', KFF_FORMAT_VERSION_MAJOR, KFF_FORMAT_VERSION_MINOR,
 	           static_cast<uint8_t>((encoding[0] << 6) | (encoding[1] << 4) | (encoding[2] << 2) | encoding[3]),
 	           static_cast<uint8_t>(unique ? 1 : 0), static_cast<uint8_t>(canonical ? 1 : 0)};
 	b += big_endian(metadata.size(), 4);

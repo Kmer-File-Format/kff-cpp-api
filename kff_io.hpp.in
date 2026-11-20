@@ -26,9 +26,15 @@ using uint = unsigned long;
 #define KFF_IO
 
 
-// the configured options and settings for Tutorial
-#define KFF_VERSION_MAJOR @KFF_VERSION_MAJOR@
-#define KFF_VERSION_MINOR @KFF_VERSION_MINOR@
+// Version of the KFF format written in the files. The files of a higher version are not read.
+#define KFF_FORMAT_VERSION_MAJOR @KFF_FORMAT_VERSION_MAJOR@
+#define KFF_FORMAT_VERSION_MINOR @KFF_FORMAT_VERSION_MINOR@
+// Version of this library (kff-cpp-api)
+#define KFF_API_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define KFF_API_VERSION_MINOR @PROJECT_VERSION_MINOR@
+// Former names of the version of the format, kept for the existing code
+#define KFF_VERSION_MAJOR KFF_FORMAT_VERSION_MAJOR
+#define KFF_VERSION_MINOR KFF_FORMAT_VERSION_MINOR
 
 class Section_GV;
 class Section_Raw;

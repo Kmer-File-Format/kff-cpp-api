@@ -25,8 +25,8 @@ int main(int argc, char const *argv[])
 		exit(1);
 	}
 
-	cout << "KFF version 1.0" << endl;
-	cout << "API version " << KFF_VERSION_MAJOR << "." << KFF_VERSION_MINOR << endl;
+	cout << "KFF format version " << KFF_FORMAT_VERSION_MAJOR << "." << KFF_FORMAT_VERSION_MINOR << endl;
+	cout << "API version " << KFF_API_VERSION_MAJOR << "." << KFF_API_VERSION_MINOR << endl;
 
 	// Open the file and read metadata
 	string filename = argv[1];

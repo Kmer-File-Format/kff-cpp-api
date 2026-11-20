@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.16...3.31)
 
-# set the project name
+# The version of the project is the version of the library (its interface and its code)
 project(KFF VERSION 1.0 LANGUAGES CXX)
+
+# Version of the KFF format written in the files (the files of a higher version are not read).
+# It only changes with the format, independently of the version of the library.
+set(KFF_FORMAT_VERSION_MAJOR 1)
+set(KFF_FORMAT_VERSION_MINOR 0)
 
 # True when this directory is the main project (not added by add_subdirectory)
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
