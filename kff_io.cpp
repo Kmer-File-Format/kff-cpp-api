@@ -1088,19 +1088,21 @@ Block_section_reader * Block_section_reader::construct_section(Kff_file * file) 
 }
 
 
+/* Value of the variable name of the file. The message is thrown when the variable is not declared. */
+static uint64_t section_variable(const Kff_file * file, const char * name, const char * missing) {
+	const auto it = file->global_vars.find(name);
+	if (it == file->global_vars.end())
+		throw missing;
+	return it->second;
+}
+
+
 // ----- Raw sequence section -----
 
 Section_Raw::Section_Raw(Kff_file * file) : Section(file){
-	if (file->global_vars.find("k") == file->global_vars.end())
-		throw "Impossible to read the raw section due to missing k variable";
-	if(file->global_vars.find("max") == file->global_vars.end())
-		throw "Impossible to read the raw section due to missing max variable";
-	if(file->global_vars.find("data_size") == file->global_vars.end())
-		throw "Impossible to read the raw section due to missing data_size variable";
-	
-	uint64_t k = file->global_vars["k"];
-	uint64_t max = file->global_vars["max"];
-	uint64_t data_size = file->global_vars["data_size"];
+	uint64_t k = section_variable(file, "k", "Impossible to read the raw section due to missing k variable");
+	uint64_t max = section_variable(file, "max", "Impossible to read the raw section due to missing max variable");
+	uint64_t data_size = section_variable(file, "data_size", "Impossible to read the raw section due to missing data_size variable");
 
 	this->nb_blocks = 0;
 
@@ -1119,9 +1121,9 @@ Section_Raw::Section_Raw(Kff_file * file) : Section(file){
 	if (file->is_writer) {
 		if (file->indexed)
 			file->register_position('r');
-		char type = 'r';
-		this->file->write((uint8_t *)&type, 1);
-		this->file->write((uint8_t *)&this->nb_blocks, 8);
+		// Type and number of blocks (written by close())
+		uint8_t header[1 + 8] = {'r'};
+		this->file->write(header, sizeof(header));
 	}
 }
 
@@ -1274,19 +1276,10 @@ void Section_Raw::close() {
 // ----- Minimizer sequence section -----
 
 Section_Minimizer::Section_Minimizer(Kff_file * file) : Section(file) {
-	if (file->global_vars.find("k") == file->global_vars.end())
-		throw "Impossible to read the minimizer section due to missing k variable";
-	if (file->global_vars.find("m") == file->global_vars.end())
-		throw "Impossible to read the minimizer section due to missing m variable";
-	if(file->global_vars.find("max") == file->global_vars.end())
-		throw "Impossible to read the minimizer section due to missing max variable";
-	if(file->global_vars.find("data_size") == file->global_vars.end())
-		throw "Impossible to read the minimizer section due to missing data_size variable";
-	
-	uint64_t k = file->global_vars["k"];
-	uint64_t m = file->global_vars["m"];
-	uint64_t max = file->global_vars["max"];
-	uint64_t data_size = file->global_vars["data_size"];
+	uint64_t k = section_variable(file, "k", "Impossible to read the minimizer section due to missing k variable");
+	uint64_t m = section_variable(file, "m", "Impossible to read the minimizer section due to missing m variable");
+	uint64_t max = section_variable(file, "max", "Impossible to read the minimizer section due to missing max variable");
+	uint64_t data_size = section_variable(file, "data_size", "Impossible to read the minimizer section due to missing data_size variable");
 
 	this->nb_blocks = 0;
 	this->remaining_blocks = 0;
@@ -1313,10 +1306,9 @@ Section_Minimizer::Section_Minimizer(Kff_file * file) : Section(file) {
 		if (file->indexed)
 			file->register_position('m');
 
-		char type = 'm';
-		this->file->write((uint8_t *)&type, 1);
-		this->file->write(this->minimizer, this->nb_bytes_mini);
-		this->file->write((uint8_t *)&this->nb_blocks, 8);
+		// Type, minimizer (written by write_minimizer()) and number of blocks (written by close())
+		uint8_t header[1 + 255 + 8] = {'m'};
+		this->file->write(header, 1 + this->nb_bytes_mini + 8);
 	}
 }
 
