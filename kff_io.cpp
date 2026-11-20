@@ -333,7 +333,13 @@ void Kff_file::set_indexation(bool indexed) {
 
 void Kff_file::register_position(char section_type) {
 	if (this->is_writer and this->indexed) {
-		this->section_positions[this->tellp()] = section_type;
+		const long position = this->tellp();
+		// The sections are usually registered in the order of the file: the position is then
+		// inserted at the end of the map without search (same result as operator[])
+		if (this->section_positions.empty() or this->section_positions.rbegin()->first < position)
+			this->section_positions.emplace_hint(this->section_positions.end(), position, section_type);
+		else
+			this->section_positions[position] = section_type;
 	}
 }
 
@@ -1035,7 +1041,12 @@ Section_Index::Section_Index(Kff_file * file) : Section(file) {
 }
 
 void Section_Index::register_section(char section_type, int64_t pos) {
-	this->index[pos] = section_type;
+	// Usually registered in the order of the positions: inserted at the end of the map without
+	// search (same result as operator[])
+	if (this->index.empty() or this->index.rbegin()->first < pos)
+		this->index.emplace_hint(this->index.end(), pos, section_type);
+	else
+		this->index[pos] = section_type;
 }
 
 void Section_Index::set_next_index(int64_t index) {

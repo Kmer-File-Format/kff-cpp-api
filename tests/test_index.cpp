@@ -168,3 +168,95 @@ TEST_CASE("index: sections can be built from their type") {
 	CHECK_EQ(types, std::string("vrvmriv"));
 	(void)sections;
 }
+
+TEST_CASE("index: entries registered out of order or twice (the last type is kept)") {
+	TempDir dir;
+	std::string name = dir.file("unordered.kff");
+	{
+		Kff_file file(name, "w");
+		file.set_indexation(false);
+		Section_Index si(&file);
+		si.register_section('m', 10);
+		si.register_section('r', -5);
+		si.register_section('v', 10);
+		si.register_section('r', 30);
+		si.register_section('v', -20);
+		si.register_section('m', 30);
+		CHECK(si.index == (std::map<int64_t, char>{{-20, 'v'}, {-5, 'r'}, {10, 'v'}, {30, 'm'}}));
+		si.close();
+		file.close();
+	}
+	Bytes bytes = read_file(name);
+	Bytes expected = {'i'};
+	expected += big_endian(4, 8);
+	for (auto entry : std::vector<std::pair<int64_t, char>>{{-20, 'v'}, {-5, 'r'}, {10, 'v'}, {30, 'm'}}) {
+		expected += Bytes{(uint8_t)entry.second};
+		expected += big_endian(entry.first, 8);
+	}
+	expected += big_endian(0, 8);
+	CHECK_EQ(slice(bytes, first_section_position(), bytes.size() - 3), expected);
+
+	// Positions of the sections of a file registered before the last one or twice (the file
+	// starts with 8 bytes of header)
+	Kff_file file(dir.file("positions.kff"), "w");
+	Bytes zeros(100, 0);
+	file.write(zeros.data(), zeros.size());
+	file.register_position('r');
+	file.register_position('v');
+	file.jump_to(40);
+	file.register_position('r');
+	file.register_position('m');
+	file.jump_to(100);
+	file.register_position('r');
+	CHECK(file.section_positions == (std::map<long, char>{{40, 'm'}, {100, 'r'}, {108, 'v'}}));
+	file.close(false);
+}
+
+TEST_CASE("index: footer of a file of many sections") {
+	TempDir dir;
+	std::string name = dir.file("many.kff");
+	const int nb_sections = 10000;
+	std::map<long, char> sections;
+	{
+		Kff_file file(name, "w");
+		Section_GV sgv(&file);
+		sections[sgv.beginning] = 'v';
+		sgv.write_var("k", 10);
+		sgv.write_var("m", 5);
+		sgv.write_var("max", 3);
+		sgv.write_var("data_size", 0);
+		sgv.close();
+		Random rnd(30);
+		for (int s = 0; s < nb_sections; s++) {
+			if (s % 3 == 0) {
+				Section_Raw sr(&file);
+				sections[sr.beginning] = 'r';
+				Bytes seq = encode(rnd.sequence(11));
+				sr.write_compacted_sequence(seq.data(), 11, nullptr);
+				sr.close();
+			} else {
+				Section_Minimizer sm(&file);
+				sections[sm.beginning] = 'm';
+				Bytes mini = encode(rnd.sequence(5));
+				sm.write_minimizer(mini.data());
+				Bytes seq = encode(rnd.sequence(6));
+				sm.write_compacted_sequence_without_mini(seq.data(), 6, 2, nullptr);
+				sm.close();
+			}
+		}
+		file.close();
+	}
+	Bytes bytes = read_file(name);
+	Kff_file file(name, "r");
+	const long index_position = file.footer->vars.at("first_index");
+	const long index_end = index_position + 17 + 9 * sections.size();
+	Bytes expected = {'i'};
+	expected += big_endian(sections.size(), 8);
+	for (const auto & entry : sections) {
+		expected += Bytes{(uint8_t)entry.second};
+		expected += big_endian(entry.first - index_end, 8);
+	}
+	expected += big_endian(0, 8);
+	CHECK_EQ(slice(bytes, index_position, index_end), expected);
+	CHECK_EQ(file.index[0]->index.size(), sections.size());
+}
