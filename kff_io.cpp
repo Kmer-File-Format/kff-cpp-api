@@ -646,6 +646,21 @@ void Kff_file::write_at(const uint8_t * bytes, unsigned long size, unsigned long
 	}
 }
 
+/* Place for size bytes at the end of the write buffer of the file, nullptr when they do not fit in
+ * the current buffer (Kff_file::write() then enlarges the buffer or saves it on disk). The bytes
+ * written there are added to the file by commit_write(), as Kff_file::write() does. A block of a
+ * section is then written with one test instead of one call to write() per field. */
+static inline uint8_t * buffer_space(Kff_file * file, uint64_t size) {
+	if (file->is_writer and size <= file->buffer_size - file->next_free)
+		return file->file_buffer + file->next_free;
+	return nullptr;
+}
+
+static inline void commit_write(Kff_file * file, uint64_t size) {
+	file->next_free += size;
+	file->current_position += size;
+}
+
 unsigned long Kff_file::tellp() {
 	return this->current_position;
 }
@@ -1102,16 +1117,32 @@ uint32_t Section_Raw::read_section_header() {
 }
 
 void Section_Raw::write_compacted_sequence(uint8_t* seq, uint64_t seq_size, uint8_t * data_array) {
+	uint64_t nb_kmers = seq_size - k + 1;
+	uint64_t seq_bytes_needed = (seq_size + 3) / 4;
+	uint64_t data_bytes_needed = data_size * nb_kmers;
+
+	// Usual case: the block is written at once in the buffer of the file
+	const uint64_t block_size = this->nb_kmers_bytes + seq_bytes_needed + data_bytes_needed;
+	uint8_t * block = buffer_space(this->file, block_size);
+	if (block != nullptr) {
+		store_big_endian(block, this->nb_kmers_bytes, nb_kmers);
+		block += this->nb_kmers_bytes;
+		if (seq_bytes_needed > 0)
+			memcpy(block, seq, seq_bytes_needed);
+		if (data_bytes_needed > 0)
+			memcpy(block + seq_bytes_needed, data_array, data_bytes_needed);
+		commit_write(this->file, block_size);
+		this->nb_blocks += 1;
+		return;
+	}
+
 	uint8_t buff[8];
 	// 1 - Write nb kmers
-	uint64_t nb_kmers = seq_size - k + 1;
 	store_big_endian(buff, this->nb_kmers_bytes, nb_kmers);
 	this->file->write(buff, this->nb_kmers_bytes);
 	// 2 - Write sequence
-	uint64_t seq_bytes_needed = (seq_size + 3) / 4;
 	this->file->write(seq, seq_bytes_needed);
 	// 3 - Write data
-	uint64_t data_bytes_needed = data_size * nb_kmers;
 	this->file->write(data_array, data_bytes_needed);
 
 	this->nb_blocks += 1;
@@ -1320,19 +1351,37 @@ uint32_t Section_Minimizer::read_section_header() {
 }
 
 void Section_Minimizer::write_compacted_sequence_without_mini(uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
+	uint64_t nb_kmers = seq_size + m - k + 1;
+	uint64_t seq_bytes_needed = bytes_from_bit_array(2, seq_size);
+	uint64_t data_bytes_needed = bytes_from_bit_array(data_size*8, nb_kmers);
+
+	// Usual case: the block is written at once in the buffer of the file
+	const uint64_t block_size = this->nb_kmers_bytes + this->mini_pos_bytes + seq_bytes_needed + data_bytes_needed;
+	uint8_t * block = buffer_space(this->file, block_size);
+	if (block != nullptr) {
+		store_big_endian(block, this->nb_kmers_bytes, nb_kmers);
+		block += this->nb_kmers_bytes;
+		store_big_endian(block, this->mini_pos_bytes, mini_pos);
+		block += this->mini_pos_bytes;
+		if (seq_bytes_needed > 0)
+			memcpy(block, seq, seq_bytes_needed);
+		if (data_bytes_needed > 0)
+			memcpy(block + seq_bytes_needed, data_array, data_bytes_needed);
+		commit_write(this->file, block_size);
+		this->nb_blocks += 1;
+		return;
+	}
+
 	uint8_t buff[8];
 	// 1 - Write nb kmers
-	uint64_t nb_kmers = seq_size + m - k + 1;
 	store_big_endian(buff, this->nb_kmers_bytes, nb_kmers);
 	file->write(buff, this->nb_kmers_bytes);
 	// 2 - Write minimizer position
 	store_big_endian(buff, this->mini_pos_bytes, mini_pos);
 	file->write(buff, this->mini_pos_bytes);
 	// 3 - Write sequence with chopped minimizer
-	uint64_t seq_bytes_needed = bytes_from_bit_array(2, seq_size);
 	this->file->write(seq, seq_bytes_needed);
 	// 4 - Write data
-	uint64_t data_bytes_needed = bytes_from_bit_array(data_size*8, nb_kmers);
 	this->file->write(data_array, data_bytes_needed);
 
 	this->nb_blocks += 1;
@@ -1441,26 +1490,57 @@ static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 }
 
 
-void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
-	// The sequence is copied without its minimizer, right aligned with null padding bits
+/* Copies the sequence seq (seq_size nucleotides, right aligned) without its m nucleotides of
+ * minimizer starting at mini_pos into no_mini: bytes_from_bit_array(2, seq_size - m) bytes, right
+ * aligned with null padding bits. */
+static void remove_minimizer(uint8_t * no_mini, const uint8_t * seq, uint64_t seq_size, uint64_t mini_pos, uint64_t m) {
 	const uint64_t no_mini_size = seq_size - m;
-	this->nucleotide_buffer.assign(bytes_from_bit_array(2, no_mini_size) + 1, 0);
-	uint8_t * no_mini = this->nucleotide_buffer.data();
 
 	if (seq_size <= 32) {
-		// Short sequences: 64 bits arithmetic
+		// Short sequences: 64 bits arithmetic (all the bytes are written)
 		const uint64_t suffix_size = seq_size - mini_pos - m;
 		const uint64_t full = load_nucleotides(seq, seq_size);
 		const uint64_t suffix = full & (shift_nucleotides(1, suffix_size) - 1);
 		const uint64_t prefix = mini_pos == 0 ? 0 : full >> (2 * (suffix_size + m));
 		store_nucleotides(no_mini, no_mini_size, shift_nucleotides(prefix, suffix_size) | suffix);
 	} else {
-		// Prefix then suffix of the minimizer
+		// Prefix then suffix of the minimizer (copy_nucleotides needs null bytes)
+		memset(no_mini, 0, bytes_from_bit_array(2, no_mini_size));
 		const uint64_t seq_offset = (4 - seq_size % 4) % 4;
 		const uint64_t no_mini_offset = (4 - no_mini_size % 4) % 4;
 		copy_nucleotides(no_mini, no_mini_offset, seq, seq_offset, mini_pos);
 		copy_nucleotides(no_mini, no_mini_offset + mini_pos, seq, seq_offset + mini_pos + m, seq_size - mini_pos - m);
 	}
+}
+
+
+void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_size, uint64_t mini_pos, uint8_t * data_array) {
+	const uint64_t no_mini_size = seq_size - m;
+	const uint64_t nb_kmers = no_mini_size + m - k + 1;
+	const uint64_t seq_bytes_needed = bytes_from_bit_array(2, no_mini_size);
+	const uint64_t data_bytes_needed = bytes_from_bit_array(data_size*8, nb_kmers);
+
+	// Usual case: the block is written at once in the buffer of the file, the sequence without
+	// its minimizer directly at its place
+	const uint64_t block_size = this->nb_kmers_bytes + this->mini_pos_bytes + seq_bytes_needed + data_bytes_needed;
+	uint8_t * block = buffer_space(this->file, block_size);
+	if (block != nullptr) {
+		store_big_endian(block, this->nb_kmers_bytes, nb_kmers);
+		block += this->nb_kmers_bytes;
+		store_big_endian(block, this->mini_pos_bytes, mini_pos);
+		block += this->mini_pos_bytes;
+		remove_minimizer(block, seq, seq_size, mini_pos, this->m);
+		if (data_bytes_needed > 0)
+			memcpy(block + seq_bytes_needed, data_array, data_bytes_needed);
+		commit_write(this->file, block_size);
+		this->nb_blocks += 1;
+		return;
+	}
+
+	// The sequence is copied without its minimizer, right aligned with null padding bits
+	this->nucleotide_buffer.assign(seq_bytes_needed + 1, 0);
+	uint8_t * no_mini = this->nucleotide_buffer.data();
+	remove_minimizer(no_mini, seq, seq_size, mini_pos, this->m);
 
 	// Write the compacted sequence into file.
 	this->write_compacted_sequence_without_mini(no_mini, no_mini_size, mini_pos, data_array);
