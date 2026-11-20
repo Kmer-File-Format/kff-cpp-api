@@ -27,7 +27,7 @@ void store_big_endian(uint8_t * buff, size_t size, const T& data) {
 }
 
 template<typename T>
-void load_big_endian(uint8_t * buff, size_t size, T& data) {
+void load_big_endian(const uint8_t * buff, size_t size, T& data) {
 	data = 0;
 	for (uint b=0 ; b < size; b++) {
 		data <<= 8;
@@ -690,6 +690,22 @@ static inline void copy_bytes(uint8_t * dst, const uint8_t * src, uint64_t n) {
 }
 
 
+/* Address of the size bytes at the current position of a file in reading mode when they are all in
+ * its read cache, nullptr otherwise (Kff_file::read() then reads them). The bytes used are
+ * consumed by commit_read(), as Kff_file::read() does. A block of a section is then read with one
+ * test instead of one call to read() per field. */
+static inline const uint8_t * cached_bytes(const Kff_file * file, uint64_t size) {
+	if (file->is_reader and file->current_position >= file->read_cache_start and
+		file->current_position + size <= file->read_cache_start + file->read_cache_size)
+		return file->read_cache.data() + (file->current_position - file->read_cache_start);
+	return nullptr;
+}
+
+static inline void commit_read(Kff_file * file, uint64_t size) {
+	file->current_position += size;
+}
+
+
 unsigned long Kff_file::tellp() {
 	return this->current_position;
 }
@@ -1185,6 +1201,25 @@ void Section_Raw::write_compacted_sequence(uint8_t* seq, uint64_t seq_size, uint
 }
 
 uint64_t Section_Raw::read_compacted_sequence(uint8_t* seq, uint8_t* data) {
+	// Usual case: the whole block is in the read cache of the file
+	const uint8_t * block = cached_bytes(this->file, this->nb_kmers_bytes);
+	if (block != nullptr) {
+		uint64_t nb_kmers_in_block = 1;
+		if (nb_kmers_bytes != 0)
+			load_big_endian(block, this->nb_kmers_bytes, nb_kmers_in_block);
+		const size_t seq_bytes_needed = (nb_kmers_in_block + k - 1 + 3) / 4;
+		const uint64_t data_bytes_used = data_size * nb_kmers_in_block;
+		const uint64_t block_size = this->nb_kmers_bytes + seq_bytes_needed + data_bytes_used;
+		if (cached_bytes(this->file, block_size) != nullptr) {
+			block += this->nb_kmers_bytes;
+			copy_bytes(seq, block, seq_bytes_needed);
+			copy_bytes(data, block + seq_bytes_needed, data_bytes_used);
+			commit_read(this->file, block_size);
+			this->remaining_blocks -= 1;
+			return nb_kmers_in_block;
+		}
+	}
+
 	uint8_t buff[8];
 	uint64_t nb_kmers_in_block = 1;
 	// 1 - Read the number of kmers in the sequence
@@ -1207,6 +1242,23 @@ uint64_t Section_Raw::read_compacted_sequence(uint8_t* seq, uint8_t* data) {
 
 
 uint64_t Section_Raw::read_compacted_sequence(uint8_t* seq_data) {
+	// Usual case: the whole block is in the read cache of the file
+	const uint8_t * block = cached_bytes(this->file, this->nb_kmers_bytes);
+	if (block != nullptr) {
+		uint64_t nb_kmers_in_block = 1;
+		if (nb_kmers_bytes != 0)
+			load_big_endian(block, this->nb_kmers_bytes, nb_kmers_in_block);
+		const size_t seq_bytes_needed = (nb_kmers_in_block + k - 1 + 3) / 4;
+		const uint64_t data_bytes_used = data_size * nb_kmers_in_block;
+		const uint64_t block_size = this->nb_kmers_bytes + seq_bytes_needed + data_bytes_used;
+		if (cached_bytes(this->file, block_size) != nullptr) {
+			copy_bytes(seq_data, block + this->nb_kmers_bytes, seq_bytes_needed + data_bytes_used);
+			commit_read(this->file, block_size);
+			this->remaining_blocks -= 1;
+			return nb_kmers_in_block;
+		}
+	}
+
 	uint8_t buff[8];
 	uint64_t nb_kmers_in_block = 1;
 	// 1 - Read the number of kmers in the sequence
@@ -1414,6 +1466,27 @@ void Section_Minimizer::write_compacted_sequence_without_mini(uint8_t* seq, uint
 }
 
 uint64_t Section_Minimizer::read_compacted_sequence_without_mini(uint8_t* seq, uint8_t* data, uint64_t & mini_pos) {
+	// Usual case: the whole block is in the read cache of the file
+	const uint8_t * block = cached_bytes(this->file, this->nb_kmers_bytes + this->mini_pos_bytes);
+	if (block != nullptr) {
+		uint64_t nb_kmers_in_block = 1;
+		if (nb_kmers_bytes != 0)
+			load_big_endian(block, this->nb_kmers_bytes, nb_kmers_in_block);
+		const size_t seq_bytes_needed = bytes_from_bit_array(2, nb_kmers_in_block + k - m - 1);
+		const uint64_t data_bytes_needed = bytes_from_bit_array(data_size*8, nb_kmers_in_block);
+		const uint64_t block_size = this->nb_kmers_bytes + this->mini_pos_bytes + seq_bytes_needed + data_bytes_needed;
+		if (cached_bytes(this->file, block_size) != nullptr) {
+			block += this->nb_kmers_bytes;
+			load_big_endian(block, this->mini_pos_bytes, mini_pos);
+			block += this->mini_pos_bytes;
+			copy_bytes(seq, block, seq_bytes_needed);
+			copy_bytes(data, block + seq_bytes_needed, data_bytes_needed);
+			commit_read(this->file, block_size);
+			this->remaining_blocks -= 1;
+			return nb_kmers_in_block;
+		}
+	}
+
 	uint8_t buff[8];
 	uint64_t nb_kmers_in_block = 1;
 	// 1 - Read the number of kmers in the sequence
@@ -1438,6 +1511,25 @@ uint64_t Section_Minimizer::read_compacted_sequence_without_mini(uint8_t* seq, u
 }
 
 uint64_t Section_Minimizer::read_compacted_sequence_without_mini(uint8_t* seq_data, uint64_t & mini_pos) {
+	// Usual case: the whole block is in the read cache of the file
+	const uint8_t * block = cached_bytes(this->file, this->nb_kmers_bytes + this->mini_pos_bytes);
+	if (block != nullptr) {
+		uint64_t nb_kmers_in_block = 1;
+		if (nb_kmers_bytes != 0)
+			load_big_endian(block, this->nb_kmers_bytes, nb_kmers_in_block);
+		const size_t seq_bytes_needed = bytes_from_bit_array(2, nb_kmers_in_block + k - m - 1);
+		const uint64_t data_bytes_needed = bytes_from_bit_array(data_size*8, nb_kmers_in_block);
+		const uint64_t block_size = this->nb_kmers_bytes + this->mini_pos_bytes + seq_bytes_needed + data_bytes_needed;
+		if (cached_bytes(this->file, block_size) != nullptr) {
+			block += this->nb_kmers_bytes;
+			load_big_endian(block, this->mini_pos_bytes, mini_pos);
+			copy_bytes(seq_data, block + this->mini_pos_bytes, seq_bytes_needed + data_bytes_needed);
+			commit_read(this->file, block_size);
+			this->remaining_blocks -= 1;
+			return nb_kmers_in_block;
+		}
+	}
+
 	uint8_t buff[8];
 	uint64_t nb_kmers_in_block = 1;
 	// 1 - Read the number of kmers in the sequence
