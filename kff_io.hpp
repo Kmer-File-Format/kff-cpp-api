@@ -27,11 +27,11 @@ using uint = unsigned long;
 
 
 // Version of the KFF format written in the files. The files of a higher version are not read.
-#define KFF_FORMAT_VERSION_MAJOR @KFF_FORMAT_VERSION_MAJOR@
-#define KFF_FORMAT_VERSION_MINOR @KFF_FORMAT_VERSION_MINOR@
-// Version of this library (kff-cpp-api)
-#define KFF_API_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
-#define KFF_API_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define KFF_FORMAT_VERSION_MAJOR 1
+#define KFF_FORMAT_VERSION_MINOR 0
+// Version of this library (kff-cpp-api). The version of the CMake project is read here.
+#define KFF_API_VERSION_MAJOR 1
+#define KFF_API_VERSION_MINOR 1
 // Former names of the version of the format, kept for the existing code
 #define KFF_VERSION_MAJOR KFF_FORMAT_VERSION_MAJOR
 #define KFF_VERSION_MINOR KFF_FORMAT_VERSION_MINOR

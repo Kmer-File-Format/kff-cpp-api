@@ -46,13 +46,16 @@ or include the sources with `add_subdirectory(kff-cpp-api)` and link to
 
 ## Versions
 
+`kff_io.hpp` and `kff_io.cpp` can also be copied into another project and compiled
+with it, without CMake.
+
 Two version numbers are defined in `kff_io.hpp`:
 - the version of the KFF format (`KFF_FORMAT_VERSION_MAJOR`, `KFF_FORMAT_VERSION_MINOR`): it is
   written in the header of the files, and the files of a higher version are not read. It only
   changes with the format. `KFF_VERSION_MAJOR` and `KFF_VERSION_MINOR` are its former names.
-- the version of the library (`KFF_API_VERSION_MAJOR`, `KFF_API_VERSION_MINOR`): it is also the
-  version of the CMake package and of the shared library. Its major number changes when the
-  interface is no longer compatible.
+- the version of the library (`KFF_API_VERSION_MAJOR`, `KFF_API_VERSION_MINOR`): CMake reads it
+  there for the version of the project, of the CMake package and of the shared library. Its
+  major number changes when the interface is no longer compatible.
 
 The unit tests (`tests/`) check the bytes written for each element of the
 format against the specification, read them back, and cover the reader,

@@ -47,5 +47,4 @@ doc/
 Doxyfile
 
 # kff files
-kff_io.hpp
 **/*.kff
