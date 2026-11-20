@@ -661,6 +661,29 @@ static inline void commit_write(Kff_file * file, uint64_t size) {
 	file->current_position += size;
 }
 
+/* memcpy of n bytes without a call to the library for the small sizes of the fields of a block */
+static inline void copy_bytes(uint8_t * dst, const uint8_t * src, uint64_t n) {
+	if (n > 16) {
+		memcpy(dst, src, n);
+	} else if (n >= 8) {
+		uint64_t first, last;
+		memcpy(&first, src, 8);
+		memcpy(&last, src + n - 8, 8);
+		memcpy(dst, &first, 8);
+		memcpy(dst + n - 8, &last, 8);
+	} else if (n >= 4) {
+		uint32_t first, last;
+		memcpy(&first, src, 4);
+		memcpy(&last, src + n - 4, 4);
+		memcpy(dst, &first, 4);
+		memcpy(dst + n - 4, &last, 4);
+	} else {
+		for (uint64_t i=0 ; i<n ; i++)
+			dst[i] = src[i];
+	}
+}
+
+
 unsigned long Kff_file::tellp() {
 	return this->current_position;
 }
@@ -1128,9 +1151,9 @@ void Section_Raw::write_compacted_sequence(uint8_t* seq, uint64_t seq_size, uint
 		store_big_endian(block, this->nb_kmers_bytes, nb_kmers);
 		block += this->nb_kmers_bytes;
 		if (seq_bytes_needed > 0)
-			memcpy(block, seq, seq_bytes_needed);
+			copy_bytes(block, seq, seq_bytes_needed);
 		if (data_bytes_needed > 0)
-			memcpy(block + seq_bytes_needed, data_array, data_bytes_needed);
+			copy_bytes(block + seq_bytes_needed, data_array, data_bytes_needed);
 		commit_write(this->file, block_size);
 		this->nb_blocks += 1;
 		return;
@@ -1364,9 +1387,9 @@ void Section_Minimizer::write_compacted_sequence_without_mini(uint8_t* seq, uint
 		store_big_endian(block, this->mini_pos_bytes, mini_pos);
 		block += this->mini_pos_bytes;
 		if (seq_bytes_needed > 0)
-			memcpy(block, seq, seq_bytes_needed);
+			copy_bytes(block, seq, seq_bytes_needed);
 		if (data_bytes_needed > 0)
-			memcpy(block + seq_bytes_needed, data_array, data_bytes_needed);
+			copy_bytes(block + seq_bytes_needed, data_array, data_bytes_needed);
 		commit_write(this->file, block_size);
 		this->nb_blocks += 1;
 		return;
@@ -1531,7 +1554,7 @@ void Section_Minimizer::write_compacted_sequence (uint8_t* seq, uint64_t seq_siz
 		block += this->mini_pos_bytes;
 		remove_minimizer(block, seq, seq_size, mini_pos, this->m);
 		if (data_bytes_needed > 0)
-			memcpy(block + seq_bytes_needed, data_array, data_bytes_needed);
+			copy_bytes(block + seq_bytes_needed, data_array, data_bytes_needed);
 		commit_write(this->file, block_size);
 		this->nb_blocks += 1;
 		return;
