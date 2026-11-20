@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16...3.31)
 
 # The version of the project is the version of the library (its interface and its code)
-project(KFF VERSION 1.0 LANGUAGES CXX)
+project(KFF VERSION 1.1 LANGUAGES CXX)
 
 # Version of the KFF format written in the files (the files of a higher version are not read).
 # It only changes with the format, independently of the version of the library.
